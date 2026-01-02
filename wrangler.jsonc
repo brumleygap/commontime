@@ -1,0 +1,23 @@
+{
+  "main": "dist/_worker.js/index.js",
+  "name": "commontime",
+  "compatibility_date": "2026-01-02",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "commontime-db",
+      "database_id": "63783172-f60e-4f0a-802b-452fb83ccb9b"
+    }
+  ]
+}
