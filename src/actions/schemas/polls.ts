@@ -1,18 +1,12 @@
 import { z } from "zod";
 
 export const CreatePollSchema = z.object({
-    title: z
-        .string()
-        .min(1, "Poll title is required")
-        .max(200, "Poll title is too long"),
+    title: z.string().min(1, "Poll title is required").max(200),
+    description: z.string().max(1000).optional(),
+    timezone: z.string().min(1, "Timezone is required"),
 
-    timezone: z
-        .string()
-        .min(1, "Timezone is required"),
-
-    // For now: raw datetime strings from <input type="datetime-local">
-    // We'll normalize later.
     options: z
-        .array(z.string().min(1))
-        .min(1, "At least one date/time option is required"),
+        .preprocess((val) => (Array.isArray(val) ? val : [val]), z.array(z.string()))
+        .transform((arr) => arr.map((s) => (s ?? "").trim()).filter(Boolean))
+        .refine((arr) => arr.length >= 1, "At least one date/time option is required"),
 });

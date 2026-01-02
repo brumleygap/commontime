@@ -1,8 +1,16 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
+
 const result = await Astro.getActionResult(actions.createPoll);
+
+if (result?.data && (result.data as any).ok) {
+  const token = (result.data as any).token;
+  return Astro.redirect(`/poll/${token}`);
+}
 ---
+
+
 
 <BaseLayout title="Create Poll">
   <section class="mx-auto max-w-3xl px-4 py-12">
@@ -13,8 +21,9 @@ const result = await Astro.getActionResult(actions.createPoll);
     <p class="mt-2 text-slate-600">
       Give it a name and choose possible dates and times.
     </p>
+
 {result?.error && (
-  <div class="rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
+  <div class="mt-4 rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
     <p class="font-semibold">Fix these:</p>
     <pre class="mt-2 text-sm whitespace-pre-wrap">{JSON.stringify(result.error, null, 2)}</pre>
   </div>
