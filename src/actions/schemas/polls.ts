@@ -1,12 +1,23 @@
+// src/actions/schemas/polls.ts
 import { z } from "zod";
 
 export const CreatePollSchema = z.object({
-    title: z.string().min(1, "Poll title is required").max(200),
-    description: z.string().max(1000).optional(),
-    timezone: z.string().min(1, "Timezone is required"),
+    title: z.string().min(1, "Poll title is required."),
 
+    description: z
+        .string()
+        .transform((v) => v.trim())
+        .optional()
+        .or(z.literal(""))
+        .transform((v) => (v.length ? v : undefined)),
+
+    timezone: z.string().min(1, "Timezone is required."),
+
+    // Whatever you called the date/time inputs; this matches our current action
     options: z
-        .preprocess((val) => (Array.isArray(val) ? val : [val]), z.array(z.string()))
-        .transform((arr) => arr.map((s) => (s ?? "").trim()).filter(Boolean))
-        .refine((arr) => arr.length >= 1, "At least one date/time option is required"),
+        .union([
+            z.array(z.string().optional().nullable()),
+            z.string().optional().nullable(),
+        ])
+        .transform((v) => (Array.isArray(v) ? v : v == null ? [] : [v])),
 });

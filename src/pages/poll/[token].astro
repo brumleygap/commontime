@@ -1,8 +1,30 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { actions } from "astro:actions";
 
 const { token } = Astro.params;
 const db = Astro.locals.runtime.env.DB;
+
+// Vote action result (after POST)
+const voteResult = await Astro.getActionResult(actions.submitVoteDebug);
+const voteError = voteResult?.error;
+const voteSuccess =
+  voteResult?.data && (voteResult.data as any).ok === true;
+
+  function formatOptionDate(dt: string) {
+  const d = new Date(dt);
+
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 
 // Load poll by token
 const poll = await db
@@ -41,36 +63,77 @@ const options = await db
   <section class="mx-auto max-w-3xl px-4 py-12">
     <h1 class="text-2xl font-bold">{poll.title}</h1>
 
-    {poll.description && (
-      <p class="mt-2 text-slate-600">{poll.description}</p>
-    )}
+    {poll.description && <p class="mt-2 text-slate-600">{poll.description}</p>}
 
     <div class="mt-6 rounded-md border bg-white p-4">
       <h2 class="text-sm font-semibold text-slate-800">Vote</h2>
       <p class="mt-1 text-sm text-slate-600">
-        Pick the times that work for you. (Next step: save your vote.)
+        Pick the times that work for you.
       </p>
 
-      <form class="mt-4 space-y-3">
-        {options.results.map((opt) => (
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="optionId" value={opt.id} class="h-4 w-4" />
-            <span class="text-slate-800">
-              {opt.option_datetime}
-            </span>
-          </label>
-        ))}
+      {voteError && (
+  <div class="mt-4 rounded-md border border-red-300 bg-red-50 p-4 text-red-900">
+    <p class="font-semibold">We couldn’t save your response.</p>
+    <p class="mt-1 text-sm">
+      Please check your choices and try again.
+    </p>
 
+    {/* Optional: keep debug details, but tucked away */}
+    <details class="mt-2 text-xs">
+      <summary class="cursor-pointer underline">Show technical details</summary>
+      <pre class="mt-1 whitespace-pre-wrap">
+        {JSON.stringify(voteError, null, 2)}
+      </pre>
+    </details>
+  </div>
+)}
+
+{voteSuccess && (
+  <div class="mt-4 rounded-md border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
+    <p class="font-semibold">Your response has been saved.</p>
+    <p class="mt-1 text-sm">
+      You can safely close this page or adjust your answers by submitting again.
+    </p>
+  </div>
+)}
+      <form method="POST" action={actions.submitVoteDebug} class="mt-4 space-y-3">
+        <input type="hidden" name="token" value={token} />
+
+        <label class="block text-sm font-medium text-slate-700">
+          Your name (optional)
+          <input
+            type="text"
+            name="name"
+            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm"
+            placeholder="Ernie"
+          />
+        </label>
+
+       {options.results.map(
+  (opt: { id: number; option_datetime: string }) => (
+    <label class="flex items-center gap-3">
+      <input
+        type="checkbox"
+        name="optionIds"
+        value={opt.id}
+        class="h-4 w-4"
+      />
+     <span class="text-slate-800">
+  {formatOptionDate(opt.option_datetime)}
+</span>
+    </label>
+  )
+)}
         <div class="mt-6 flex justify-end">
           <button
-            type="button"
-            class="rounded-md bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-          >
-            Save my vote (coming next)
-          </button>
+  type="submit"
+  class="rounded-md bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+>
+  {voteSuccess ? "Update my response" : "Save my response"}
+</button>
+
         </div>
       </form>
     </div>
   </section>
 </BaseLayout>
-
