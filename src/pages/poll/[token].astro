@@ -1,13 +1,76 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+
 const { token } = Astro.params;
+const db = Astro.locals.runtime.env.DB;
+
+// Load poll by token
+const poll = await db
+  .prepare(
+    `SELECT id, token, title, description, timezone, created_at
+     FROM polls
+     WHERE token = ?`
+  )
+  .bind(token)
+  .first<{
+    id: number;
+    token: string;
+    title: string;
+    description: string | null;
+    timezone: string;
+    created_at: string;
+  }>();
+
+if (!poll) {
+  return new Response("Poll not found", { status: 404 });
+}
+
+// Load options
+const options = await db
+  .prepare(
+    `SELECT id, option_datetime
+     FROM poll_options
+     WHERE poll_id = ?
+     ORDER BY option_datetime ASC`
+  )
+  .bind(poll.id)
+  .all<{ id: number; option_datetime: string }>();
 ---
 
-<BaseLayout title="Poll">
+<BaseLayout title={poll.title}>
   <section class="mx-auto max-w-3xl px-4 py-12">
-    <h1 class="text-2xl font-bold">Poll page</h1>
-    <p class="mt-2 text-slate-600">
-      Token: <code class="rounded bg-slate-100 px-2 py-1">{token}</code>
-    </p>
+    <h1 class="text-2xl font-bold">{poll.title}</h1>
+
+    {poll.description && (
+      <p class="mt-2 text-slate-600">{poll.description}</p>
+    )}
+
+    <div class="mt-6 rounded-md border bg-white p-4">
+      <h2 class="text-sm font-semibold text-slate-800">Vote</h2>
+      <p class="mt-1 text-sm text-slate-600">
+        Pick the times that work for you. (Next step: save your vote.)
+      </p>
+
+      <form class="mt-4 space-y-3">
+        {options.results.map((opt) => (
+          <label class="flex items-center gap-3">
+            <input type="checkbox" name="optionId" value={opt.id} class="h-4 w-4" />
+            <span class="text-slate-800">
+              {opt.option_datetime}
+            </span>
+          </label>
+        ))}
+
+        <div class="mt-6 flex justify-end">
+          <button
+            type="button"
+            class="rounded-md bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Save my vote (coming next)
+          </button>
+        </div>
+      </form>
+    </div>
   </section>
 </BaseLayout>
+
