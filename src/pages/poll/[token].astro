@@ -57,6 +57,8 @@ const options = await db
   )
   .bind(poll.id)
   .all<{ id: number; option_datetime: string }>();
+  console.log("OPTIONS rows:", options.results.length, options.results);
+
 ---
 
 <BaseLayout title={poll.title}>
