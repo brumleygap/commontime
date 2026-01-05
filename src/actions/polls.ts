@@ -52,14 +52,17 @@ export const createPoll = defineAction({
             const pollId = pollInsert.id;
 
             // Insert options
-            const stmt = db.prepare(
-                `INSERT INTO poll_options (poll_id, option_datetime)
+// Insert options using batch
+const optionInserts = cleanOptions.map(dt =>
+    db.prepare(
+        `INSERT INTO poll_options (poll_id, option_datetime)
          VALUES (?, ?)`
-            );
+    ).bind(pollId, dt)
+);
 
-            for (const dt of cleanOptions) {
-                await stmt.bind(pollId, dt).run();
-            }
+await db.batch(optionInserts);
+
+            
 
             return { ok: true, token };
         } catch (err: any) {
