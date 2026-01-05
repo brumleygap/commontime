@@ -15,8 +15,9 @@ export const createPoll = defineAction({
     input: CreatePollSchema,
 
     async handler(input, context) {
+    console.log("Raw input received:", input);
+    console.log("Options array:", input.options);
         const { title, description, timezone, options } = input;
-
         const db = context.locals.runtime.env.DB;
         if (!db) {
             throw new ActionError({
