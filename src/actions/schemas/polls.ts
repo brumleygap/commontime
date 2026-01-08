@@ -5,13 +5,23 @@ export const CreatePollSchema = z.object({
 
     description: z
         .string()
-        .optional()
+        .nullish()
         .transform((v) => (v?.trim() ? v.trim() : undefined)),
 
     timezone: z.string().min(1, "Timezone is required."),
 
     options: z.preprocess(
         (v) => {
+            // If it's a JSON string, parse it
+            if (typeof v === "string" && v.startsWith("[")) {
+                try {
+                    const parsed = JSON.parse(v);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [v]; // If parse fails, treat as single value
+                }
+            }
+
             // Normalize: undefined/null -> []
             if (v == null) return [];
 
@@ -31,4 +41,5 @@ export const CreatePollSchema = z.object({
                 message: "Add at least one date & time option.",
             })
     ),
+
 });

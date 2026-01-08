@@ -3,7 +3,8 @@ import { defineAction, ActionError } from "astro:actions";
 import { CreatePollSchema } from "./schemas/polls";
 
 function makeToken(length = 12) {
-    const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    const alphabet =
+        "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     let out = "";
     const bytes = crypto.getRandomValues(new Uint8Array(length));
     for (const b of bytes) out += alphabet[b % alphabet.length];
@@ -14,26 +15,26 @@ export const createPoll = defineAction({
     accept: "form",
     input: CreatePollSchema,
 
-    async handler(input, context) {
-    console.log("Raw input received:", input);
-    console.log("Options array:", input.options);
+    handler: async (input, context) => {
         const { title, description, timezone, options } = input;
+
+        // DEBUG: Log what we're receiving
+        console.log("Raw input received:", input);
+        console.log("📊 Received options:", options);
+        console.log("📊 Options length:", options.length);
+        console.log("📊 Options array:", JSON.stringify(options));
         const db = context.locals.runtime.env.DB;
         if (!db) {
             throw new ActionError({
                 code: "BAD_REQUEST",
-                message: "Database (D1) is not available on context.locals.runtime.env.DB",
+                message:
+                    "Database (D1) is not available on context.locals.runtime.env.DB",
             });
         }
 
         try {
-            // Schema already trimmed/filtered and enforced min(1),
-            // but trimming again is harmless and keeps DB tidy.
-            const cleanOptions = options.map((dt) => dt.trim()).filter(Boolean);
-
             const token = makeToken();
 
-            // Insert poll
             const pollInsert = await db
                 .prepare(
                     `INSERT INTO polls (token, title, description, timezone)
@@ -52,26 +53,28 @@ export const createPoll = defineAction({
 
             const pollId = pollInsert.id;
 
-            // Insert options
-// Insert options using batch
-const optionInserts = cleanOptions.map(dt =>
-    db.prepare(
-        `INSERT INTO poll_options (poll_id, option_datetime)
-         VALUES (?, ?)`
-    ).bind(pollId, dt)
-);
+            // Insert options using batch
+            const optionInserts = options.map(dt =>
+                db.prepare(
+                    `INSERT INTO poll_options (poll_id, option_datetime)
+                     VALUES (?, ?)`
+                ).bind(pollId, dt)
+            );
 
-await db.batch(optionInserts);
+            console.log("📊 About to insert", optionInserts.length, "options");
 
-            
+            await db.batch(optionInserts);
+
+            console.log("✅ Successfully inserted options");
 
             return { ok: true, token };
         } catch (err: any) {
             console.error("createPoll failed:", err);
-
             throw new ActionError({
                 code: "BAD_REQUEST",
-                message: err?.message ?? "Unknown error while creating poll. Check D1 schema.",
+                message:
+                    err?.message ??
+                    "Unknown error while creating poll. Check D1 schema / logs.",
             });
         }
     },
