@@ -24,20 +24,56 @@ export const createPoll = defineAction({
             console.log("📊 Received options:", options);
             console.log("📊 Options length:", options.length);
             console.log("📊 Options array:", JSON.stringify(options));
-            
-            // Check database binding
-            const db = context.locals.runtime?.env?.DB;
+
+            // Check database binding - try multiple access patterns for Cloudflare adapter
+            // In Astro with Cloudflare, actions should receive runtime through context.locals.runtime.env
+            let db = context.locals?.runtime?.env?.DB;
+
+            // Try alternative access patterns in case structure differs
+            if (!db && (context as any).locals?.runtime?.env) {
+                db = (context as any).locals.runtime.env.DB;
+            }
+
+            // Try accessing through context directly (unlikely but worth checking)
+            if (!db && (context as any).runtime?.env) {
+                db = (context as any).runtime.env.DB;
+            }
+
             if (!db) {
-                console.error("❌ DB not available. Context:", {
-                    hasRuntime: !!context.locals.runtime,
-                    hasEnv: !!context.locals.runtime?.env,
-                    hasDB: !!context.locals.runtime?.env?.DB,
-                    keys: context.locals.runtime?.env ? Object.keys(context.locals.runtime.env) : [],
-                });
+                // Enhanced logging to help diagnose the issue
+                const contextInfo = {
+                    hasLocals: !!context.locals,
+                    hasRuntime: !!context.locals?.runtime,
+                    hasEnv: !!context.locals?.runtime?.env,
+                    hasDB: !!context.locals?.runtime?.env?.DB,
+                    localsKeys: context.locals ? Object.keys(context.locals) : [],
+                    runtimeKeys: context.locals?.runtime ? Object.keys(context.locals.runtime) : [],
+                    envKeys: context.locals?.runtime?.env ? Object.keys(context.locals.runtime.env) : [],
+                    contextType: typeof context,
+                    localsType: typeof context.locals,
+                    // Try to serialize context (might fail, but worth trying)
+                    contextString: (() => {
+                        try {
+                            return JSON.stringify(context, (key, value) => {
+                                // Skip functions and circular refs
+                                if (typeof value === 'function') return '[Function]';
+                                if (typeof value === 'object' && value !== null) {
+                                    if (key === 'request' || key === 'clientAddress') return '[Request]';
+                                }
+                                return value;
+                            }, 2);
+                        } catch (e) {
+                            return `[Could not serialize: ${String(e)}]`;
+                        }
+                    })(),
+                };
+
+                console.error("❌ DB not available in action context. Diagnostic info:", contextInfo);
+
                 throw new ActionError({
                     code: "BAD_REQUEST",
                     message:
-                        "Database (D1) is not available on context.locals.runtime.env.DB. Check Cloudflare binding configuration.",
+                        "Database (D1) is not available. This may be a Cloudflare adapter configuration issue. Check Cloudflare logs for detailed context structure. Ensure D1 database binding 'DB' is configured in wrangler.jsonc and that you've redeployed after configuration changes.",
                 });
             }
 
@@ -94,12 +130,12 @@ export const createPoll = defineAction({
                 stack: err?.stack,
                 cause: err?.cause,
             });
-            
+
             // If it's already an ActionError, re-throw it as-is
             if (err instanceof ActionError) {
                 throw err;
             }
-            
+
             // Otherwise, wrap it with a proper message
             const errorMessage = err?.message || String(err) || "Unknown error";
             throw new ActionError({
