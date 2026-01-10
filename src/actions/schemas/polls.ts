@@ -12,8 +12,6 @@ export const CreatePollSchema = z.object({
 
     options: z.preprocess(
         (v) => {
-            console.log("🔍 Schema preprocess - options value:", v, "type:", typeof v);
-
             // If it's a JSON string, parse it
             if (typeof v === "string") {
                 // Check if it's a JSON array
@@ -21,10 +19,8 @@ export const CreatePollSchema = z.object({
                 if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
                     try {
                         const parsed = JSON.parse(trimmed);
-                        console.log("🔍 Parsed JSON array:", parsed);
                         return Array.isArray(parsed) ? parsed : [];
-                    } catch (e) {
-                        console.error("🔍 JSON parse failed:", e);
+                    } catch {
                         // If parse fails but it's a string, treat as single value
                         return trimmed ? [trimmed] : [];
                     }
@@ -34,30 +30,19 @@ export const CreatePollSchema = z.object({
             }
 
             // Normalize: undefined/null -> []
-            if (v == null) {
-                console.log("🔍 Options is null/undefined");
-                return [];
-            }
+            if (v == null) return [];
 
             // Normalize: array -> array
-            if (Array.isArray(v)) {
-                console.log("🔍 Options is already array:", v);
-                return v;
-            }
+            if (Array.isArray(v)) return v;
 
             // Anything else -> []
-            console.log("🔍 Options is unexpected type:", typeof v, v);
             return [];
         },
         z
             .array(z.string())
-            .transform((arr) => {
-                const filtered = arr.map((s) => String(s).trim()).filter(Boolean);
-                console.log("🔍 Transformed options array:", filtered);
-                return filtered;
-            })
+            .transform((arr) => arr.map((s) => String(s).trim()).filter(Boolean))
             .refine((arr) => arr.length >= 1, {
-                message: "Add at least one date & time option. Please fill in the date & time fields.",
+                message: "Add at least one date & time option.",
             })
     ),
 

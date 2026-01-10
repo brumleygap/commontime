@@ -94,7 +94,7 @@ if (result?.data && result.data.ok) {
   function attachFormHandler() {
     const form = document.querySelector('form');
     if (!form) {
-      console.error('❌ Form not found!');
+      console.error('Form not found');
       return;
     }
     
@@ -106,8 +106,6 @@ if (result?.data && result.data.ok) {
         })
         .filter((v): v is string => v !== null && v !== '');
       
-      console.log('📅 Collected datetime values:', datetimes);
-      
       if (datetimes.length === 0) {
         e.preventDefault();
         alert('Please fill in at least one date & time option.');
@@ -117,9 +115,8 @@ if (result?.data && result.data.ok) {
       const hiddenField = document.getElementById('options-data') as HTMLInputElement;
       if (hiddenField) {
         hiddenField.value = JSON.stringify(datetimes);
-        console.log('📤 Setting hidden field value:', hiddenField.value);
       } else {
-        console.error('❌ Hidden field not found!');
+        console.error('Hidden field not found');
         e.preventDefault();
         alert('Form error: Unable to submit. Please refresh and try again.');
         return false;
