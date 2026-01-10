@@ -12,33 +12,52 @@ export const CreatePollSchema = z.object({
 
     options: z.preprocess(
         (v) => {
+            console.log("🔍 Schema preprocess - options value:", v, "type:", typeof v);
+
             // If it's a JSON string, parse it
-            if (typeof v === "string" && v.startsWith("[")) {
-                try {
-                    const parsed = JSON.parse(v);
-                    return Array.isArray(parsed) ? parsed : [];
-                } catch {
-                    return [v]; // If parse fails, treat as single value
+            if (typeof v === "string") {
+                // Check if it's a JSON array
+                const trimmed = v.trim();
+                if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        console.log("🔍 Parsed JSON array:", parsed);
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        console.error("🔍 JSON parse failed:", e);
+                        // If parse fails but it's a string, treat as single value
+                        return trimmed ? [trimmed] : [];
+                    }
                 }
+                // Regular string (shouldn't happen with our form, but handle it)
+                return trimmed ? [trimmed] : [];
             }
 
             // Normalize: undefined/null -> []
-            if (v == null) return [];
-
-            // Normalize: string -> [string]
-            if (typeof v === "string") return [v];
+            if (v == null) {
+                console.log("🔍 Options is null/undefined");
+                return [];
+            }
 
             // Normalize: array -> array
-            if (Array.isArray(v)) return v;
+            if (Array.isArray(v)) {
+                console.log("🔍 Options is already array:", v);
+                return v;
+            }
 
             // Anything else -> []
+            console.log("🔍 Options is unexpected type:", typeof v, v);
             return [];
         },
         z
             .array(z.string())
-            .transform((arr) => arr.map((s) => s.trim()).filter(Boolean))
+            .transform((arr) => {
+                const filtered = arr.map((s) => String(s).trim()).filter(Boolean);
+                console.log("🔍 Transformed options array:", filtered);
+                return filtered;
+            })
             .refine((arr) => arr.length >= 1, {
-                message: "Add at least one date & time option.",
+                message: "Add at least one date & time option. Please fill in the date & time fields.",
             })
     ),
 

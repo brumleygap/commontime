@@ -17,10 +17,16 @@ if (result?.data && result.data.ok) {
 
     {result?.error && (
       <div class="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
-        <p class="font-semibold">Fix these:</p>
-        <pre class="mt-2 text-sm whitespace-pre-wrap">
+        <p class="font-semibold">Error:</p>
+        {result.error.message && (
+          <p class="mt-2 font-medium">{result.error.message}</p>
+        )}
+        <details class="mt-3">
+          <summary class="cursor-pointer text-sm font-medium">Technical details</summary>
+          <pre class="mt-2 text-xs whitespace-pre-wrap overflow-auto">
 {JSON.stringify(result.error, null, 2)}
-        </pre>
+          </pre>
+        </details>
       </div>
     )}
 
@@ -84,12 +90,36 @@ if (result?.data && result.data.ok) {
 
 <script>
   // Collect all datetime values before form submission
-  document.querySelector('form')?.addEventListener('submit', (e) => {
-    const datetimes = Array.from(document.querySelectorAll('.datetime-option'))
-      .map(input => (input as HTMLInputElement).value)
-      .filter(Boolean);
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.querySelector('form');
+    if (!form) return;
     
-    const hiddenField = document.getElementById('options-data') as HTMLInputElement;
-    hiddenField.value = JSON.stringify(datetimes);
+    form.addEventListener('submit', (e) => {
+      const datetimes = Array.from(document.querySelectorAll('.datetime-option'))
+        .map(input => {
+          const value = (input as HTMLInputElement).value;
+          return value ? value : null;
+        })
+        .filter((v): v is string => v !== null && v !== '');
+      
+      console.log('📅 Collected datetime values:', datetimes);
+      
+      if (datetimes.length === 0) {
+        e.preventDefault();
+        alert('Please fill in at least one date & time option.');
+        return false;
+      }
+      
+      const hiddenField = document.getElementById('options-data') as HTMLInputElement;
+      if (hiddenField) {
+        hiddenField.value = JSON.stringify(datetimes);
+        console.log('📤 Setting hidden field value:', hiddenField.value);
+      } else {
+        console.error('❌ Hidden field not found!');
+        e.preventDefault();
+        alert('Form error: Unable to submit. Please refresh and try again.');
+        return false;
+      }
+    });
   });
 </script>
