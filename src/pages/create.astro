@@ -90,9 +90,13 @@ if (result?.data && result.data.ok) {
 
 <script>
   // Collect all datetime values before form submission
-  document.addEventListener('DOMContentLoaded', () => {
+  // Function to attach form handler (can be called immediately or on DOMContentLoaded)
+  function attachFormHandler() {
     const form = document.querySelector('form');
-    if (!form) return;
+    if (!form) {
+      console.error('❌ Form not found!');
+      return;
+    }
     
     form.addEventListener('submit', (e) => {
       const datetimes = Array.from(document.querySelectorAll('.datetime-option'))
@@ -121,5 +125,13 @@ if (result?.data && result.data.ok) {
         return false;
       }
     });
-  });
+  }
+
+  // Check if DOM is already loaded, otherwise wait for DOMContentLoaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachFormHandler);
+  } else {
+    // DOM is already ready, run immediately
+    attachFormHandler();
+  }
 </script>
