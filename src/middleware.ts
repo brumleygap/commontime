@@ -26,9 +26,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
 
     const { pathname } = context.url;
-    const isPublic =
-        PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-        pathname.startsWith("/poll/");
+    const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
     if (!context.locals.user && !isPublic) {
         return context.redirect("/login");
