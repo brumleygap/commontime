@@ -94,6 +94,9 @@ const optionStats = options.map(opt => {
       {voteError && (
         <div class="mt-4 rounded-md border border-red-300 bg-red-50 p-4 text-red-900">
           <p class="font-semibold">We couldn't save your response.</p>
+          {voteError.message && (
+            <p class="mt-1 text-sm">{voteError.message}</p>
+          )}
           <details class="mt-2 text-xs">
             <summary class="cursor-pointer underline">Technical details</summary>
             <pre class="mt-1 whitespace-pre-wrap">{JSON.stringify(voteError, null, 2)}</pre>
