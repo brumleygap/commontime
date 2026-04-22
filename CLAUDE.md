@@ -8,20 +8,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build     # build to ./dist/ for Cloudflare Workers
 ```
 
-Migrations are applied automatically by CI on merge to `main`. To apply manually against production:
-```bash
-npx wrangler d1 migrations apply commontime-db
-```
-
-There is no test suite or lint script configured. Testing is done by deploying to Cloudflare preview.
+There is no test suite or lint script. All testing is done on Cloudflare preview deployments — never locally.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to `main`:
-- **typecheck** — `tsc --noEmit` on all branches
-- **migrate** — `wrangler d1 migrations apply commontime-db` on merge to `main` only, after typecheck passes
+- **typecheck** — `tsc --noEmit`
+- **migrate** — `wrangler d1 migrations apply commontime-db --remote` (targets the real Cloudflare D1, never a local SQLite)
 
 Requires two GitHub Actions secrets: `CLOUDFLARE_API_TOKEN` (D1 + Workers Edit) and `CLOUDFLARE_ACCOUNT_ID`.
+
+If a migration must be applied manually (e.g. first-time setup or CI failure):
+```bash
+npx wrangler d1 migrations apply commontime-db --remote
+```
+
+Always use `--remote`. There is no local database.
 
 ## Architecture
 
@@ -51,7 +53,7 @@ Magic link flow: user submits email on `/login` → `sendMagicLink` action finds
 
 `src/middleware.ts` runs on every request: reads the `session` cookie, joins `sessions` → `users`, and populates `locals.user = { id, email }` if valid.
 
-The `EMAIL` binding (Cloudflare Email Service) is declared in `wrangler.jsonc` and typed as `SendEmail` in `src/env.d.ts`.
+The `EMAIL` binding is a **Service binding** to the `commontime-email-sender` Worker (which holds the actual `send_email` binding). Cloudflare Pages does not support `send_email` bindings directly. It is configured in the Cloudflare Pages dashboard (Settings → Bindings → Service binding) and typed as `Fetcher` in `src/env.d.ts`.
 
 ### Routing and pages
 
