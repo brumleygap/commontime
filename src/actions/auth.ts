@@ -9,8 +9,22 @@ export const sendMagicLink = defineAction({
     }),
 
     async handler(input, context) {
-        const db = context.locals.runtime.env.DB;
-        const emailBinding = context.locals.runtime.env.EMAIL;
+        const db = context.locals?.runtime?.env?.DB;
+        const emailBinding = context.locals?.runtime?.env?.EMAIL;
+
+        if (!db) {
+            throw new ActionError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Database is not available. Check Cloudflare Pages binding configuration: Settings → Functions → D1 Database Bindings.",
+            });
+        }
+
+        if (!emailBinding) {
+            throw new ActionError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Email binding is not available. Check Cloudflare Pages binding configuration: Settings → Functions → Service bindings.",
+            });
+        }
 
         // Find or create user
         let user = await db

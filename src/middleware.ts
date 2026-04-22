@@ -4,7 +4,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
 
     if (sessionToken) {
-        const db = context.locals.runtime.env.DB;
+        const db = context.locals?.runtime?.env?.DB;
+        if (!db) return next();
         const now = new Date().toISOString();
 
         const row = await db
