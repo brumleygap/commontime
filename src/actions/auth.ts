@@ -22,7 +22,7 @@ export const sendMagicLink = defineAction({
         if (!emailBinding) {
             throw new ActionError({
                 code: "INTERNAL_SERVER_ERROR",
-                message: "Email binding is not available. Check Cloudflare Pages binding configuration: Settings → Functions → Service bindings.",
+                message: "Email binding (EMAIL) is not available. The send_email binding is configured via wrangler.jsonc only — there is no dashboard UI for it. Ensure your domain is onboarded to Cloudflare Email Service (Cloudflare dashboard → Compute & AI → Email Service → Onboard Domain) and that wrangler.jsonc contains a send_email entry named EMAIL.",
             });
         }
 
