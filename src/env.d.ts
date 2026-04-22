@@ -1,18 +1,12 @@
 /// <reference types="astro/client" />
 
-interface SendEmail {
-    send(message: {
-        to: string | string[];
-        from: string | { email: string; name: string };
-        subject: string;
-        text?: string;
-        html?: string;
-    }): Promise<{ messageId: string }>;
+interface Fetcher {
+    fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
 type Env = {
     DB: D1Database;
-    EMAIL: SendEmail;
+    EMAIL: Fetcher;
 };
 
 declare namespace App {
