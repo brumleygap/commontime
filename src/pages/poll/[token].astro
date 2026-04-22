@@ -112,7 +112,9 @@ const optionStats = options.map(opt => {
         <input type="hidden" name="token" value={token} />
         <label class="block text-sm font-medium text-slate-700">
           Your name (optional)
-          <input type="text" name="name" placeholder="Ernie"
+          <input type="text" name="name"
+            value={Astro.locals.user?.email ?? ""}
+            placeholder="Your name or email"
             class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500" />
         </label>
         {options.map(opt => (
