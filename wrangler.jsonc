@@ -19,5 +19,10 @@
       "database_name": "commontime-db",
       "database_id": "63783172-f60e-4f0a-802b-452fb83ccb9b"
     }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
   ]
 }
