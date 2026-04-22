@@ -1,5 +1,7 @@
 import { defineMiddleware } from "astro:middleware";
 
+const PUBLIC_PATHS = ["/login", "/auth/verify"];
+
 export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
 
@@ -21,6 +23,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
         if (row) {
             context.locals.user = { id: row.user_id, email: row.email };
         }
+    }
+
+    const { pathname } = context.url;
+    const isPublic =
+        PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
+        pathname.startsWith("/poll/");
+
+    if (!context.locals.user && !isPublic) {
+        return context.redirect("/login");
     }
 
     return next();
