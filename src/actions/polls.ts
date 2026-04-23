@@ -32,13 +32,15 @@ export const createPoll = defineAction({
 
             const token = makeToken();
 
+            const creatorId = context.locals.user?.id ?? null;
+
             const pollInsert = await db
                 .prepare(
-                    `INSERT INTO polls (token, title, description, timezone)
-           VALUES (?, ?, ?, ?)
+                    `INSERT INTO polls (token, title, description, timezone, creator_id)
+           VALUES (?, ?, ?, ?, ?)
            RETURNING id`
                 )
-                .bind(token, title, description ?? null, timezone)
+                .bind(token, title, description ?? null, timezone, creatorId)
                 .first<{ id: number }>();
 
             if (!pollInsert || !pollInsert.id) {

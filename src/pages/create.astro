@@ -89,46 +89,33 @@ if (result?.data && result.data.ok) {
 </BaseLayout>
 
 <script>
-  // Collect all datetime values before form submission
-  // Function to attach form handler (can be called immediately or on DOMContentLoaded)
-  function attachFormHandler() {
-    const form = document.querySelector('form');
-    if (!form) {
-      console.error('Form not found');
-      return;
-    }
-    
-    form.addEventListener('submit', (e) => {
-      const datetimes = Array.from(document.querySelectorAll('.datetime-option'))
-        .map(input => {
-          const value = (input as HTMLInputElement).value;
-          return value ? value : null;
-        })
-        .filter((v): v is string => v !== null && v !== '');
-      
-      if (datetimes.length === 0) {
+  function syncOptions() {
+    const values = Array.from(document.querySelectorAll<HTMLInputElement>('.datetime-option'))
+      .map(el => el.value)
+      .filter(v => v !== '');
+    const hidden = document.getElementById('options-data') as HTMLInputElement | null;
+    if (hidden) hidden.value = JSON.stringify(values);
+  }
+
+  function init() {
+    document.querySelectorAll('.datetime-option').forEach(el => {
+      el.addEventListener('change', syncOptions);
+    });
+
+    document.querySelector('form')?.addEventListener('submit', (e) => {
+      syncOptions();
+      const hidden = document.getElementById('options-data') as HTMLInputElement | null;
+      const values = JSON.parse(hidden?.value || '[]');
+      if (values.length === 0) {
         e.preventDefault();
         alert('Please fill in at least one date & time option.');
-        return false;
-      }
-      
-      const hiddenField = document.getElementById('options-data') as HTMLInputElement;
-      if (hiddenField) {
-        hiddenField.value = JSON.stringify(datetimes);
-      } else {
-        console.error('Hidden field not found');
-        e.preventDefault();
-        alert('Form error: Unable to submit. Please refresh and try again.');
-        return false;
       }
     });
   }
 
-  // Check if DOM is already loaded, otherwise wait for DOMContentLoaded
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attachFormHandler);
+    document.addEventListener('DOMContentLoaded', init);
   } else {
-    // DOM is already ready, run immediately
-    attachFormHandler();
+    init();
   }
 </script>

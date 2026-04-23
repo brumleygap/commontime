@@ -1,12 +1,27 @@
+---
+const user = Astro.locals.user;
+---
+
 <header class="border-b bg-white">
   <div class="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
-    <h1 class="text-lg font-semibold tracking-tight">
+    <a href="/" class="text-lg font-semibold tracking-tight hover:text-slate-700">
       CommonTime
-    </h1>
+    </a>
 
-    <nav class="text-sm text-slate-600">
-      <a href="/" class="hover:text-slate-900">Home</a>
-    </nav>
+    <div class="flex items-center gap-4 text-sm text-slate-600">
+      {user ? (
+        <>
+          <span class="hidden sm:block">{user.email}</span>
+          <form method="POST" action="/auth/logout">
+            <button type="submit" class="hover:text-slate-900">
+              Log out
+            </button>
+          </form>
+        </>
+      ) : (
+        <a href="/login" class="hover:text-slate-900">Log in</a>
+      )}
+    </div>
   </div>
 </header>
 

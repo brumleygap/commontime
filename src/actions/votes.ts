@@ -1,4 +1,3 @@
-// src/actions/votes.ts
 import { defineAction, ActionError } from "astro:actions";
 import { SubmitVoteSchema } from "./schemas/votes";
 
@@ -7,83 +6,76 @@ export const submitVoteDebug = defineAction({
     input: SubmitVoteSchema,
 
     async handler(input, context) {
-        const db = context.locals.runtime.env.DB;
-
+        const db = context.locals?.runtime?.env?.DB;
         if (!db) {
             throw new ActionError({
-                code: "BAD_REQUEST",
-                message: "Database (D1) is not available on context.locals.runtime.env.DB",
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Database (D1) is not available. Check Cloudflare Pages binding configuration: Settings → Bindings → D1 database.",
             });
         }
 
         try {
-            // 1. Look up poll by its public token
             const poll = await db
-                .prepare(
-                    `SELECT id
-           FROM polls
-           WHERE token = ?`
-                )
+                .prepare(`SELECT id FROM polls WHERE token = ?`)
                 .bind(input.token)
                 .first<{ id: number }>();
 
             if (!poll) {
-                throw new ActionError({
-                    code: "BAD_REQUEST",
-                    message: "Unknown poll token.",
-                });
+                throw new ActionError({ code: "BAD_REQUEST", message: "Unknown poll token." });
             }
 
             const pollId = poll.id;
+            const userId = context.locals.user?.id ?? null;
+            // Use provided name, or fall back to logged-in email, or null
+            const name = input.name?.trim() || context.locals.user?.email || null;
 
-            // 2. Insert participant
-            // participants: id, poll_id, name, edit_token, created_at
-            const editToken =
-                (globalThis as any).crypto?.randomUUID?.() ??
-                Math.random().toString(36).slice(2, 10);
+            let participantId: number;
 
-            const participantRow = await db
-                .prepare(
-                    `INSERT INTO participants (poll_id, name, edit_token)
-           VALUES (?, ?, ?)
-           RETURNING id`
-                )
-                .bind(pollId, input.name ?? null, editToken)
-                .first<{ id: number }>();
+            // If logged in, find an existing participant row for this user+poll
+            const existing = userId
+                ? await db
+                    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
+                    .bind(pollId, userId)
+                    .first<{ id: number }>()
+                : null;
 
-            const participantId = participantRow.id;
+            if (existing) {
+                participantId = existing.id;
+                // Update display name in case it changed
+                await db
+                    .prepare(`UPDATE participants SET name = ? WHERE id = ?`)
+                    .bind(name, participantId)
+                    .run();
+                // Wipe old votes so we can replace them cleanly
+                await db
+                    .prepare(`DELETE FROM votes WHERE participant_id = ?`)
+                    .bind(participantId)
+                    .run();
+            } else {
+                const editToken = crypto.randomUUID().replace(/-/g, "");
+                const row = await db
+                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`)
+                    .bind(pollId, name, editToken, userId)
+                    .first<{ id: number }>();
+                if (!row) throw new Error("Failed to insert participant.");
+                participantId = row.id;
+            }
 
-            // 3. Insert votes (one row per selected option)
-            // votes: id, participant_id, option_id, availability
-            // For now: availability = 1 means "available"
+            // Insert fresh votes
             const voteStmt = db.prepare(
-                `INSERT INTO votes (participant_id, option_id, availability)
-         VALUES (?, ?, ?)`
+                `INSERT INTO votes (participant_id, option_id, availability) VALUES (?, ?, ?)`
             );
-
             for (const optionId of input.optionIds) {
                 await voteStmt.bind(participantId, optionId, 1).run();
             }
 
-            // 4. Return debug info for the page
-            return {
-                ok: true,
-                debug: {
-                    token: input.token,
-                    pollId,
-                    participantId,
-                    editToken,
-                    name: input.name ?? null,
-                    optionIds: input.optionIds,
-                },
-            };
+            return { ok: true };
         } catch (err: any) {
-            console.error("submitVoteDebug failed:", err);
-
+            if (err instanceof ActionError) throw err;
+            console.error("submitVote failed:", err);
             throw new ActionError({
                 code: "BAD_REQUEST",
-                message:
-                    err?.message ?? "Unknown error while saving vote. Check D1 schema / logs.",
+                message: err?.message ?? "Unknown error while saving vote.",
             });
         }
     },
