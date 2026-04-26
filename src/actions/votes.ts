@@ -1,7 +1,7 @@
 import { defineAction, ActionError } from "astro:actions";
 import { SubmitVoteSchema } from "./schemas/votes";
 
-export const submitVoteDebug = defineAction({
+export const submitVote = defineAction({
     accept: "form",
     input: SubmitVoteSchema,
 
@@ -10,7 +10,7 @@ export const submitVoteDebug = defineAction({
         if (!db) {
             throw new ActionError({
                 code: "INTERNAL_SERVER_ERROR",
-                message: "Database (D1) is not available. Check Cloudflare Pages binding configuration: Settings → Bindings → D1 database.",
+                message: "Database (D1) is not available. Check Cloudflare Pages binding configuration.",
             });
         }
 
@@ -26,12 +26,11 @@ export const submitVoteDebug = defineAction({
 
             const pollId = poll.id;
             const userId = context.locals.user?.id ?? null;
-            // Use provided name, or fall back to logged-in email, or null
             const name = input.name?.trim() || context.locals.user?.email || null;
 
             let participantId: number;
 
-            // If logged in, find an existing participant row for this user+poll
+            // Logged-in users get their existing response updated (upsert).
             const existing = userId
                 ? await db
                     .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
@@ -41,12 +40,10 @@ export const submitVoteDebug = defineAction({
 
             if (existing) {
                 participantId = existing.id;
-                // Update display name in case it changed
                 await db
                     .prepare(`UPDATE participants SET name = ? WHERE id = ?`)
                     .bind(name, participantId)
                     .run();
-                // Wipe old votes so we can replace them cleanly
                 await db
                     .prepare(`DELETE FROM votes WHERE participant_id = ?`)
                     .bind(participantId)
@@ -54,19 +51,21 @@ export const submitVoteDebug = defineAction({
             } else {
                 const editToken = crypto.randomUUID().replace(/-/g, "");
                 const row = await db
-                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`)
+                    .prepare(
+                        `INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`
+                    )
                     .bind(pollId, name, editToken, userId)
                     .first<{ id: number }>();
                 if (!row) throw new Error("Failed to insert participant.");
                 participantId = row.id;
             }
 
-            // Insert fresh votes
+            // Store ALL vote states (including busy=0), so we know who has responded.
             const voteStmt = db.prepare(
                 `INSERT INTO votes (participant_id, option_id, availability) VALUES (?, ?, ?)`
             );
-            for (const optionId of input.optionIds) {
-                await voteStmt.bind(participantId, optionId, 1).run();
+            for (const v of input.voteData) {
+                await voteStmt.bind(participantId, v.optionId, v.availability).run();
             }
 
             return { ok: true };

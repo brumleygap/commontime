@@ -2,26 +2,28 @@
 const user = Astro.locals.user;
 ---
 
-<header class="border-b bg-white">
+<header style="background: var(--ink); border-bottom: 3px solid var(--red);">
   <div class="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
-    <a href="/" class="text-lg font-semibold tracking-tight hover:text-slate-700">
-      CommonTime
+    <a href="/" class="flex items-center gap-2" style="text-decoration: none;">
+      <span style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: var(--white); line-height: 1;">𝄴</span>
+      <span style="font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.05em;">
+        Common<span style="color: var(--red); font-style: italic;">Time</span>
+      </span>
     </a>
 
-    <div class="flex items-center gap-4 text-sm text-slate-600">
+    <div style="font-family: 'DM Mono', monospace; font-size: 9px; color: var(--on-dark); text-align: right; line-height: 1.8;">
       {user ? (
         <>
           <span class="hidden sm:block">{user.email}</span>
-          <form method="POST" action="/auth/logout">
-            <button type="submit" class="hover:text-slate-900">
+          <form method="POST" action="/auth/logout" style="display: inline;">
+            <button type="submit" style="color: var(--red); background: none; border: none; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.05em;">
               Log out
             </button>
           </form>
         </>
       ) : (
-        <a href="/login" class="hover:text-slate-900">Log in</a>
+        <a href="/login" style="color: var(--on-dark); text-decoration: underline; text-underline-offset: 2px;">Log in</a>
       )}
     </div>
   </div>
 </header>
-

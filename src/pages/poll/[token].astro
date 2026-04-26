@@ -5,19 +5,151 @@ import { actions } from "astro:actions";
 const { token } = Astro.params;
 const db = Astro.locals.runtime.env.DB;
 
-const voteResult = await Astro.getActionResult(actions.submitVoteDebug);
+const voteResult = await Astro.getActionResult(actions.submitVote);
 const voteError = voteResult?.error;
-const voteSuccess = voteResult?.data && (voteResult.data as any).ok === true;
+const voteSuccess = voteResult?.data?.ok === true;
 
-function formatOptionDate(dt: string) {
-  const d = new Date(dt);
-  return d.toLocaleString("en-US", {
-    weekday: "short", month: "2-digit", day: "2-digit",
-    year: "2-digit", hour: "numeric", minute: "2-digit", hour12: true,
+// ── Data loading ──────────────────────────────────────────────────────────────
+
+const poll = await db
+  .prepare(
+    `SELECT id, token, title, description, timezone, creator_id, created_at
+     FROM polls WHERE token = ?`
+  )
+  .bind(token)
+  .first<{
+    id: number;
+    token: string;
+    title: string;
+    description: string | null;
+    timezone: string;
+    creator_id: number | null;
+    created_at: string;
+  }>();
+
+if (!poll) return new Response("Poll not found", { status: 404 });
+
+const options = (
+  await db
+    .prepare(
+      `SELECT id, option_datetime FROM poll_options WHERE poll_id = ? ORDER BY option_datetime ASC`
+    )
+    .bind(poll.id)
+    .all<{ id: number; option_datetime: string }>()
+).results;
+
+const participants = (
+  await db
+    .prepare(
+      `SELECT id, name FROM participants WHERE poll_id = ? ORDER BY created_at ASC`
+    )
+    .bind(poll.id)
+    .all<{ id: number; name: string | null }>()
+).results;
+
+const allVotes = (
+  await db
+    .prepare(
+      `SELECT v.participant_id, v.option_id, v.availability
+       FROM votes v
+       JOIN participants p ON p.id = v.participant_id
+       WHERE p.poll_id = ?`
+    )
+    .bind(poll.id)
+    .all<{ participant_id: number; option_id: number; availability: number }>()
+).results;
+
+// ── Pre-populate logged-in user's existing votes ──────────────────────────────
+
+const currentUser = Astro.locals.user ?? null;
+let myParticipantId: number | null = null;
+const myVoteMap = new Map<number, number>(); // optionId → availability
+
+if (currentUser) {
+  const myParticipant = await db
+    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
+    .bind(poll.id, currentUser.id)
+    .first<{ id: number }>();
+
+  if (myParticipant) {
+    myParticipantId = myParticipant.id;
+    const myVotes = (
+      await db
+        .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
+        .bind(myParticipant.id)
+        .all<{ option_id: number; availability: number }>()
+    ).results;
+    for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
+  }
+}
+
+// ── Build vote map for grid ───────────────────────────────────────────────────
+
+// participantId → optionId → availability (0/1/2) | undefined = no response
+const voteMap = new Map<number, Map<number, number>>();
+for (const v of allVotes) {
+  if (!voteMap.has(v.participant_id)) voteMap.set(v.participant_id, new Map());
+  voteMap.get(v.participant_id)!.set(v.option_id, v.availability);
+}
+
+// Participants who have submitted at least one vote row
+const respondedIds = new Set(allVotes.map((v) => v.participant_id));
+
+// ── Option stats for the grid columns ────────────────────────────────────────
+
+const optionStats = options.map((opt) => {
+  let yesCount = 0;
+  let maybeCount = 0;
+  const yesNames: string[] = [];
+  const maybeNames: string[] = [];
+
+  for (const p of participants) {
+    const av = voteMap.get(p.id)?.get(opt.id);
+    if (av === 1) { yesCount++; yesNames.push(p.name ?? "Anonymous"); }
+    else if (av === 2) { maybeCount++; maybeNames.push(p.name ?? "Anonymous"); }
+  }
+
+  return { ...opt, yesCount, maybeCount, score: yesCount * 2 + maybeCount, yesNames, maybeNames };
+});
+
+const maxScore = Math.max(0, ...optionStats.map((o) => o.score));
+
+// ── Group options by calendar day for the vote form ──────────────────────────
+
+type DayGroup = {
+  dayName: string;    // "Monday"
+  shortDate: string;  // "Apr 27"
+  options: typeof options;
+};
+
+const dayGroups: DayGroup[] = [];
+const dayKeyIndex = new Map<string, number>();
+
+for (const opt of options) {
+  const d = new Date(opt.option_datetime);
+  const key = d.toISOString().slice(0, 10);
+  if (!dayKeyIndex.has(key)) {
+    dayKeyIndex.set(key, dayGroups.length);
+    dayGroups.push({
+      dayName: d.toLocaleDateString("en-US", { weekday: "long" }),
+      shortDate: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      options: [],
+    });
+  }
+  dayGroups[dayKeyIndex.get(key)!].options.push(opt);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtTime(dt: string) {
+  return new Date(dt).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
   });
 }
 
-function formatColDate(dt: string) {
+function fmtColDate(dt: string) {
   const d = new Date(dt);
   return {
     date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
@@ -25,206 +157,723 @@ function formatColDate(dt: string) {
   };
 }
 
-function bgColor(available: number, total: number): string {
-  if (total === 0 || available === 0) return "#ffffff";
-  const ratio = available / total;
-  const lightness = Math.round(90 - ratio * 62);
-  return `hsl(142, 71%, ${lightness}%)`;
+// Cell background for a given availability value
+function cellBg(av: number | undefined): string {
+  if (av === 1) return "background:var(--yes-bg)";
+  if (av === 2) return "background:var(--maybe-bg)";
+  if (av === 0) return "background:var(--busy-bg);opacity:0.6";
+  return "";
 }
 
-function fgColor(available: number, total: number): string {
-  if (total === 0 || available === 0) return "#94a3b8";
-  const ratio = available / total;
-  return ratio >= 0.6 ? "#ffffff" : "#166534";
+function cellGlyph(av: number | undefined): string {
+  if (av === 1) return "✓";
+  if (av === 2) return "~";
+  if (av === 0) return "✕";
+  return "—";
 }
 
-const poll = await db
-  .prepare(`SELECT id, token, title, description, timezone, created_at FROM polls WHERE token = ?`)
-  .bind(token)
-  .first<{ id: number; token: string; title: string; description: string | null; timezone: string; created_at: string }>();
-
-if (!poll) return new Response("Poll not found", { status: 404 });
-
-const options = (await db
-  .prepare(`SELECT id, option_datetime FROM poll_options WHERE poll_id = ? ORDER BY option_datetime ASC`)
-  .bind(poll.id)
-  .all<{ id: number; option_datetime: string }>()).results;
-
-const participants = (await db
-  .prepare(`SELECT id, name FROM participants WHERE poll_id = ? ORDER BY created_at ASC`)
-  .bind(poll.id)
-  .all<{ id: number; name: string | null }>()).results;
-
-const allVotes = (await db
-  .prepare(`
-    SELECT v.participant_id, v.option_id, v.availability
-    FROM votes v
-    JOIN participants p ON p.id = v.participant_id
-    WHERE p.poll_id = ?
-  `)
-  .bind(poll.id)
-  .all<{ participant_id: number; option_id: number; availability: number }>()).results;
-
-// participantId → optionId → available
-const voteMap = new Map<number, Map<number, boolean>>();
-for (const v of allVotes) {
-  if (!voteMap.has(v.participant_id)) voteMap.set(v.participant_id, new Map());
-  voteMap.get(v.participant_id)!.set(v.option_id, v.availability === 1);
+function cellColor(av: number | undefined): string {
+  if (av === 1) return "var(--yes)";
+  if (av === 2) return "var(--maybe)";
+  if (av === 0) return "var(--red)";
+  return "var(--placeholder)";
 }
-
-const optionStats = options.map(opt => {
-  const names: string[] = [];
-  for (const p of participants) {
-    if (voteMap.get(p.id)?.get(opt.id)) names.push(p.name ?? "Anonymous");
-  }
-  return { ...opt, availableCount: names.length, availableNames: names };
-});
 ---
 
 <BaseLayout title={poll.title}>
-  <section class="mx-auto max-w-5xl px-4 py-12">
-    <h1 class="text-2xl font-bold text-slate-900">{poll.title}</h1>
-    {poll.description && <p class="mt-2 text-slate-600">{poll.description}</p>}
-
-    <!-- Voting form -->
-    <div class="mt-6 rounded-md border bg-white p-5">
-      <h2 class="text-sm font-semibold text-slate-800">Add your availability</h2>
-      <p class="mt-1 text-sm text-slate-500">Check every time that works for you.</p>
-
-      {voteError && (
-        <div class="mt-4 rounded-md border border-red-300 bg-red-50 p-4 text-red-900">
-          <p class="font-semibold">We couldn't save your response.</p>
-          {voteError.message && (
-            <p class="mt-1 text-sm">{voteError.message}</p>
-          )}
-          <details class="mt-2 text-xs">
-            <summary class="cursor-pointer underline">Technical details</summary>
-            <pre class="mt-1 whitespace-pre-wrap">{JSON.stringify(voteError, null, 2)}</pre>
-          </details>
-        </div>
+  <!-- Poll header -->
+  <div class="poll-header">
+    <div class="absolute right-0 top-0 overflow-hidden h-full w-32 pointer-events-none" aria-hidden="true">
+      <span class="ct-header-watermark">𝄴</span>
+    </div>
+    <div class="mx-auto max-w-5xl px-4 py-6 relative z-10">
+      <p class="poll-eyebrow">♩ Poll</p>
+      <h1 class="poll-title">{poll.title}</h1>
+      {poll.description && (
+        <p class="poll-desc">{poll.description}</p>
       )}
+    </div>
+  </div>
+
+  <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
+
+    <!-- ── Vote form ──────────────────────────────────────────────────────── -->
+    <div class="vote-card">
+      <div class="vote-card-head">
+        <h2 class="vote-card-title">Your availability</h2>
+        <p class="vote-card-sub">
+          {myParticipantId ? "Update your response below." : "Mark each time as yes, maybe, or busy."}
+        </p>
+      </div>
 
       {voteSuccess && (
-        <div class="mt-4 rounded-md border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
-          <p class="font-semibold">Your response has been saved.</p>
-          <p class="mt-1 text-sm">Scroll down to see the updated availability.</p>
+        <div class="success-banner">
+          <strong>Response saved!</strong>
+          <span>Scroll down to see the updated availability.</span>
         </div>
       )}
 
-      <form method="POST" action={actions.submitVoteDebug} class="mt-4 space-y-3">
+      {voteError && (
+        <div class="error-banner-inline">
+          <strong>Couldn't save your response.</strong>
+          {voteError.message && <span>{voteError.message}</span>}
+        </div>
+      )}
+
+      {myParticipantId && (
+        <div class="welcome-banner">
+          <strong>Welcome back{currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
+          <span>Your previous selections are loaded. Update any time.</span>
+        </div>
+      )}
+
+      <form method="POST" action={actions.submitVote} id="vote-form">
         <input type="hidden" name="token" value={token} />
-        <label class="block text-sm font-medium text-slate-700">
-          Your name (optional)
-          <input type="text" name="name"
-            value={Astro.locals.user?.email ?? ""}
-            placeholder="Your name or email"
-            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500" />
-        </label>
-        {options.map(opt => (
-          <label class="flex items-center gap-3">
-            <input type="checkbox" name="optionIds" value={opt.id} class="h-4 w-4 rounded" />
-            <span class="text-slate-800 text-sm">{formatOptionDate(opt.option_datetime)}</span>
-          </label>
+        <input type="hidden" name="voteData" id="vote-data" />
+
+        <!-- Name row -->
+        <div class="name-row">
+          <label for="voter-name" class="field-label">Your name</label>
+          <input
+            id="voter-name"
+            name="name"
+            type="text"
+            autocomplete="name"
+            value={currentUser?.email ?? ""}
+            placeholder="e.g. Priya"
+            class="name-input"
+          />
+        </div>
+
+        <!-- Vibe legend -->
+        <div class="vibe-legend">
+          <div class="vibe-legend-item" style="background:var(--yes-bg)">
+            <span style="color:var(--yes);font-weight:700;">✓</span>
+            <span class="vibe-legend-label" style="color:var(--yes)">Yes</span>
+          </div>
+          <div class="vibe-legend-item" style="background:var(--maybe-bg)">
+            <span style="color:var(--maybe);font-weight:700;">~</span>
+            <span class="vibe-legend-label" style="color:var(--maybe)">Maybe</span>
+          </div>
+          <div class="vibe-legend-item" style="background:var(--busy-bg)">
+            <span style="color:var(--red);font-weight:700;">✕</span>
+            <span class="vibe-legend-label" style="color:var(--red)">Busy</span>
+          </div>
+        </div>
+
+        <!-- Day groups -->
+        {dayGroups.map((group) => (
+          <div class="day-group">
+            <div class="day-header">
+              <span class="day-name">{group.dayName}</span>
+              <span class="day-date">{group.shortDate}</span>
+            </div>
+
+            {group.options.map((opt) => {
+              const existing = myVoteMap.get(opt.id);
+              return (
+                <div
+                  class="time-row"
+                  data-option-id={opt.id}
+                  data-init={existing ?? -1}
+                >
+                  <div class="time-bullet" data-bullet></div>
+                  <div class="time-label">{fmtTime(opt.option_datetime)}</div>
+                  <div class="vibe-btns">
+                    <button type="button" class="vibe-btn" data-vibe="1" title="Yes">✓</button>
+                    <button type="button" class="vibe-btn" data-vibe="2" title="Maybe">~</button>
+                    <button type="button" class="vibe-btn" data-vibe="0" title="Busy">✕</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ))}
-        <div class="mt-4 flex justify-end">
-          <button type="submit"
-            class="rounded-md bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700">
-            {voteSuccess ? "Update my response" : "Save my response"}
+
+        <div class="vote-submit-row">
+          <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 20px;">
+            {myParticipantId ? "Update my response" : "Save my response"}
           </button>
         </div>
       </form>
     </div>
 
-    <!-- Availability grid -->
-    <div class="mt-10">
-      <h2 class="text-lg font-semibold text-slate-900">Availability</h2>
+    <!-- ── Availability grid ──────────────────────────────────────────────── -->
+    <div class="avail-section">
+      <h2 class="avail-title">
+        <span style="font-family:'Playfair Display',serif;color:var(--red);font-size:20px;margin-right:8px;" aria-hidden="true">𝄴</span>
+        Availability
+      </h2>
 
       {participants.length === 0 ? (
-        <p class="mt-3 text-sm text-slate-500">No responses yet. Be the first!</p>
+        <p class="avail-empty">No responses yet. Be the first!</p>
       ) : (
-        <div class="mt-4 overflow-x-auto rounded-md border border-slate-200 bg-white">
-          <table class="min-w-full border-separate border-spacing-0 text-sm">
+        <div class="avail-table-wrap">
+          <table class="avail-table">
             <thead>
               <tr>
-                <!-- Name column header -->
-                <th class="sticky left-0 z-10 bg-white px-4 py-3 text-left font-medium text-slate-500 border-b border-r border-slate-200 min-w-[140px]">
-                  Participant
-                </th>
-
-                {optionStats.map(opt => {
-                  const { date, time } = formatColDate(opt.option_datetime);
-                  const bg = bgColor(opt.availableCount, participants.length);
-                  const fg = fgColor(opt.availableCount, participants.length);
+                <th class="avail-name-hdr">Who</th>
+                {optionStats.map((opt) => {
+                  const { date, time } = fmtColDate(opt.option_datetime);
+                  const isWinner = opt.score === maxScore && opt.score > 0;
                   return (
-                    <th class="border-b border-r border-slate-200 p-0 min-w-[110px] last:border-r-0 cursor-default"
-                      data-names={JSON.stringify(opt.availableNames)}
-                      data-count={`${opt.availableCount}/${participants.length}`}>
-                      <div class="flex flex-col items-center justify-center gap-0.5 px-3 py-3"
-                        style={`background-color: ${bg}; color: ${fg};`}>
-                        <span class="font-semibold text-xs leading-tight">{date}</span>
-                        <span class="text-xs opacity-90">{time}</span>
-                        <span class="mt-1 text-xs font-bold">
-                          {opt.availableCount}/{participants.length}
-                        </span>
-                      </div>
+                    <th
+                      class={`avail-opt-hdr${isWinner ? " winner" : ""}`}
+                      title={[...opt.yesNames.map(n => `✓ ${n}`), ...opt.maybeNames.map(n => `~ ${n}`)].join("\n") || "No responses yet"}
+                    >
+                      <span class="avail-hdr-date">{date}</span>
+                      <span class="avail-hdr-time">{time}</span>
+                      <span class={`avail-hdr-count${isWinner ? " hot" : ""}`}>
+                        {opt.yesCount}/{respondedIds.size}
+                        {isWinner ? " ★" : ""}
+                      </span>
                     </th>
                   );
                 })}
               </tr>
             </thead>
-
             <tbody>
-              {participants.map((p, i) => (
-                <tr class={i % 2 === 1 ? "bg-slate-50" : "bg-white"}>
-                  <td class="sticky left-0 z-10 border-r border-slate-200 px-4 py-2.5 font-medium text-slate-700"
-                    style={i % 2 === 1 ? "background: #f8fafc" : "background: #fff"}>
-                    {p.name ?? <span class="italic text-slate-400">Anonymous</span>}
-                  </td>
-
-                  {options.map(opt => {
-                    const available = voteMap.get(p.id)?.get(opt.id) ?? false;
-                    return (
-                      <td class="border-r border-slate-100 px-4 py-2.5 text-center last:border-r-0">
-                        {available
-                          ? <span class="text-emerald-600 font-bold text-base">✓</span>
-                          : <span class="text-slate-200 text-base">–</span>
-                        }
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {participants.map((p) => {
+                const hasResponded = respondedIds.has(p.id);
+                return (
+                  <tr class={hasResponded ? "" : "pending-row"}>
+                    <td class="avail-name-cell">
+                      {p.name ?? <em class="anon">Anonymous</em>}
+                      {!hasResponded && <span class="pending-badge">pending</span>}
+                    </td>
+                    {options.map((opt) => {
+                      const av = voteMap.get(p.id)?.get(opt.id);
+                      return (
+                        <td class="avail-cell" style={cellBg(av)}>
+                          <span style={`color:${cellColor(av)};font-weight:${av === 1 ? 700 : 400};font-size:${av === undefined ? "12px" : "14px"};`}>
+                            {cellGlyph(av)}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
+
+      <!-- Grid legend -->
+      {participants.length > 0 && (
+        <div class="grid-legend">
+          <span><strong style="color:var(--yes)">✓</strong> Yes</span>
+          <span><strong style="color:var(--maybe)">~</strong> Maybe</span>
+          <span><strong style="color:var(--red)">✕</strong> Busy</span>
+          <span style="opacity:.55"><strong>—</strong> Pending</span>
+        </div>
+      )}
     </div>
-  </section>
+
+  </div>
 </BaseLayout>
 
-<script>
-  const tip = document.createElement("div");
-  tip.style.cssText = "position:fixed;z-index:9999;display:none;pointer-events:none;background:#1e293b;color:#fff;border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.3)";
-  document.body.appendChild(tip);
-
-  function place(e: MouseEvent) {
-    const x = e.clientX;
-    const y = e.clientY;
-    tip.style.left = (x - tip.offsetWidth / 2) + "px";
-    tip.style.top  = (y - tip.offsetHeight - 12) + "px";
+<style>
+  /* ── Poll header ────────────────────────────────────────────────────── */
+  .poll-header {
+    background: var(--ink);
+    border-bottom: 3px solid var(--red);
+    position: relative;
+    overflow: hidden;
   }
 
-  document.querySelectorAll<HTMLElement>("th[data-names]").forEach(th => {
-    th.addEventListener("mouseenter", (e) => {
-      const names: string[] = JSON.parse(th.dataset.names ?? "[]");
-      const count = th.dataset.count ?? "";
-      tip.innerHTML = names.length
-        ? `<span style="color:#94a3b8;font-weight:600">Available (${count})</span><br>${names.map(n => `<span>${n}</span>`).join("<br>")}`
-        : `<span style="color:#94a3b8">No one available</span>`;
-      tip.style.display = "block";
-      place(e as MouseEvent);
+  .ct-header-watermark {
+    position: absolute;
+    right: -8px;
+    top: -20px;
+    font-family: 'Playfair Display', serif;
+    font-size: 140px;
+    font-weight: 900;
+    color: rgba(255,255,255,0.04);
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .poll-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-bottom: 6px;
+  }
+
+  .poll-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(24px, 5vw, 40px);
+    font-weight: 900;
+    color: var(--white);
+    line-height: 1.15;
+    margin-bottom: 4px;
+  }
+
+  .poll-desc {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--on-dark);
+    margin-top: 4px;
+  }
+
+  /* ── Vote card ──────────────────────────────────────────────────────── */
+  .vote-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--red);
+  }
+
+  .vote-card-head {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .vote-card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .vote-card-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* Banners */
+  .success-banner {
+    padding: 12px 20px;
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .success-banner strong {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    color: var(--green);
+  }
+
+  .success-banner span {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 11px;
+    color: var(--green);
+  }
+
+  .error-banner-inline {
+    padding: 12px 20px;
+    background: var(--busy-bg);
+    border-left: 3px solid var(--red);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  .welcome-banner {
+    padding: 12px 20px;
+    background: var(--maybe-bg);
+    border-left: 3px solid var(--maybe);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .welcome-banner strong {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--maybe-text);
+  }
+
+  .welcome-banner span {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 11px;
+    color: var(--maybe-mid);
+  }
+
+  /* Name row */
+  .name-row {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .field-label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .name-input {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--ink);
+    padding: 5px 0 7px;
+    outline: none;
+  }
+
+  .name-input::placeholder {
+    color: var(--placeholder);
+  }
+
+  .name-input:focus {
+    border-color: var(--red);
+  }
+
+  /* Vibe legend */
+  .vibe-legend {
+    display: flex;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .vibe-legend-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 0;
+    border-right: 1px solid var(--staff);
+    font-size: 13px;
+  }
+
+  .vibe-legend-item:last-child {
+    border-right: none;
+  }
+
+  .vibe-legend-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+  }
+
+  /* Day groups */
+  .day-group {
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .day-header {
+    padding: 5px 20px;
+    background: var(--day-bg);
+    border-bottom: 1px solid var(--staff);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .day-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .day-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+  }
+
+  .time-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 20px 8px 16px;
+    gap: 10px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .time-row:last-child {
+    border-bottom: none;
+  }
+
+  .time-bullet {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--bullet);
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .time-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--ink);
+    flex: 1;
+  }
+
+  .vibe-btns {
+    display: flex;
+    gap: 3px;
+  }
+
+  .vibe-btn {
+    width: 36px;
+    height: 30px;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    border: 1px solid var(--btn-border);
+    background: transparent;
+    color: var(--btn-inactive);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+  }
+
+  .vibe-btn[data-vibe="1"].active {
+    background: var(--yes-bg);
+    border-color: var(--yes);
+    color: var(--yes);
+    font-weight: 700;
+  }
+
+  .vibe-btn[data-vibe="2"].active {
+    background: var(--maybe-bg);
+    border-color: var(--maybe);
+    color: var(--maybe);
+    font-weight: 700;
+  }
+
+  .vibe-btn[data-vibe="0"].active {
+    background: var(--busy-bg);
+    border-color: var(--red);
+    color: var(--red);
+    font-weight: 700;
+  }
+
+  .vote-submit-row {
+    padding: 14px 20px;
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--staff);
+  }
+
+  /* ── Availability grid ──────────────────────────────────────────────── */
+  .avail-section { }
+
+  .avail-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .avail-empty {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 16px;
+  }
+
+  .avail-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--staff);
+    border-top: none;
+  }
+
+  .avail-table {
+    min-width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .avail-name-hdr {
+    background: var(--ink);
+    color: var(--on-dark-dim);
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 400;
+    min-width: 120px;
+    border-right: 1px solid rgba(255,255,255,0.06);
+    vertical-align: middle;
+  }
+
+  .avail-opt-hdr {
+    background: var(--ink);
+    border-left: 1px solid rgba(255,255,255,0.06);
+    border-top: 3px solid transparent;
+    padding: 10px 10px 8px;
+    text-align: center;
+    vertical-align: top;
+    min-width: 110px;
+    cursor: default;
+  }
+
+  .avail-opt-hdr.winner {
+    border-top-color: var(--winner);
+  }
+
+  .avail-hdr-date {
+    font-family: 'Playfair Display', serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--white);
+    display: block;
+    line-height: 1.3;
+  }
+
+  .avail-hdr-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    color: var(--on-dark-dim);
+    display: block;
+    margin-top: 1px;
+  }
+
+  .avail-hdr-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--on-dark-dim);
+    display: block;
+    margin-top: 3px;
+    font-weight: 700;
+  }
+
+  .avail-hdr-count.hot {
+    color: var(--winner);
+  }
+
+  .avail-name-cell {
+    padding: 9px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--ink);
+    border-right: 1px solid var(--staff);
+    border-top: 1px solid var(--staff);
+    white-space: nowrap;
+  }
+
+  .avail-cell {
+    padding: 9px 10px;
+    text-align: center;
+    border-right: 1px solid var(--staff);
+    border-top: 1px solid var(--staff);
+  }
+
+  .avail-cell:last-child {
+    border-right: none;
+  }
+
+  .pending-row {
+    opacity: 0.4;
+  }
+
+  .anon {
+    color: var(--muted);
+  }
+
+  .pending-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-style: italic;
+    margin-left: 6px;
+  }
+
+  .grid-legend {
+    display: flex;
+    gap: 20px;
+    padding: 8px 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+</style>
+
+<script>
+  // vote state: optionId (string) → availability (0|1|2|-1 = unset)
+  const state: Record<string, number> = {};
+
+  // Initialise from server-rendered data attributes
+  document.querySelectorAll<HTMLElement>(".time-row").forEach((row) => {
+    const id = row.dataset.optionId!;
+    const init = parseInt(row.dataset.init ?? "-1", 10);
+    state[id] = init >= 0 ? init : -1;
+
+    // Highlight the pre-existing vote button
+    if (init >= 0) {
+      row.querySelector<HTMLButtonElement>(`.vibe-btn[data-vibe="${init}"]`)?.classList.add("active");
+      applyBullet(row, init);
+    }
+
+    // Wire up vibe buttons
+    row.querySelectorAll<HTMLButtonElement>(".vibe-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const vibe = parseInt(btn.dataset.vibe!, 10);
+        state[id] = vibe;
+        // Toggle active class
+        row.querySelectorAll(".vibe-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        applyBullet(row, vibe);
+      });
     });
-    th.addEventListener("mousemove", (e) => place(e as MouseEvent));
-    th.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  });
+
+  function applyBullet(row: HTMLElement, vibe: number) {
+    const bullet = row.querySelector<HTMLElement>("[data-bullet]");
+    if (!bullet) return;
+    if (vibe === 1) bullet.style.background = "var(--yes)";
+    else if (vibe === 2) bullet.style.background = "var(--maybe)";
+    else if (vibe === 0) bullet.style.background = "var(--red)";
+    else bullet.style.background = "var(--bullet)";
+  }
+
+  document.getElementById("vote-form")?.addEventListener("submit", (e) => {
+    const voteData = Object.entries(state)
+      .filter(([, av]) => av >= 0)
+      .map(([optionId, availability]) => ({ optionId: parseInt(optionId, 10), availability }));
+
+    if (voteData.length === 0) {
+      // Default all unset options to "busy" (0) so the submission is not empty
+      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
+        .map((r) => parseInt(r.dataset.optionId!, 10));
+      const fallback = allIds.map((id) => ({ optionId: id, availability: 0 }));
+      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(fallback);
+    } else {
+      // Fill in any unset options as busy
+      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
+        .map((r) => parseInt(r.dataset.optionId!, 10));
+      const full = allIds.map((id) => ({
+        optionId: id,
+        availability: state[String(id)] >= 0 ? state[String(id)] : 0,
+      }));
+      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(full);
+    }
   });
 </script>

@@ -14,51 +14,152 @@ const errorMessages: Record<string, string> = {
 };
 ---
 
-<BaseLayout title="Log in — CommonTime">
-  <section class="mx-auto max-w-md px-4 py-16">
-    <h1 class="text-2xl font-bold text-slate-900">Log in</h1>
+<BaseLayout title="Log in">
+  <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
+    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
 
-    {result?.data?.ok ? (
-      <div class="mt-6 rounded-md border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
-        <p class="font-semibold">Check your email</p>
-        <p class="mt-1 text-sm">We sent a login link. It expires in 15 minutes.</p>
-      </div>
-    ) : (
-      <>
-        {(errorParam && errorMessages[errorParam]) && (
-          <div class="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
-            <p>{errorMessages[errorParam]}</p>
-          </div>
-        )}
-        {result?.error && (
-          <div class="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
-            <p>{result.error.message}</p>
-          </div>
-        )}
+    <div class="relative z-10 mx-auto max-w-md px-4 py-16">
+      <p class="ct-eyebrow mb-2">Welcome back</p>
+      <h1 class="login-title">Log <em>in</em></h1>
 
-        <form method="POST" action={actions.sendMagicLink} class="mt-8 space-y-4">
-          <div>
-            <label for="email" class="block text-sm font-medium text-slate-700">
-              Email address
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autofocus
-              placeholder="you@example.com"
-              class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500"
-            />
+      {result?.data?.ok ? (
+        <div class="login-card">
+          <div class="check-banner">
+            <strong>Check your email</strong>
+            <span>We sent a magic link. It expires in 15 minutes.</span>
           </div>
-          <button
-            type="submit"
-            class="w-full rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-          >
-            Send magic link
-          </button>
-        </form>
-      </>
-    )}
+        </div>
+      ) : (
+        <>
+          {errorParam && errorMessages[errorParam] && (
+            <div class="error-banner">{errorMessages[errorParam]}</div>
+          )}
+          {result?.error && (
+            <div class="error-banner">{result.error.message}</div>
+          )}
+
+          <div class="login-card">
+            <form method="POST" action={actions.sendMagicLink}>
+              <div class="field-group">
+                <label for="email" class="field-label">Email address</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  autofocus
+                  autocomplete="email"
+                  placeholder="you@example.com"
+                  class="field-input"
+                />
+              </div>
+
+              <p class="hint-text">We'll send a one-click login link — no password needed.</p>
+
+              <button type="submit" class="ct-btn" style="width:100%;justify-content:center;">
+                Send magic link ♩
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+    </div>
   </section>
 </BaseLayout>
+
+<style>
+  .login-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(36px, 8vw, 56px);
+    font-weight: 900;
+    color: var(--ink);
+    line-height: 1.1;
+    margin-bottom: 28px;
+  }
+
+  .login-title em {
+    color: var(--red);
+    font-style: italic;
+  }
+
+  .login-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--red);
+    padding: 28px 24px;
+  }
+
+  .check-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+  }
+
+  .check-banner strong {
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--green);
+  }
+
+  .check-banner span {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .error-banner {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background: var(--busy-bg);
+    border-left: 3px solid var(--red);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  .field-group {
+    margin-bottom: 16px;
+  }
+
+  .field-label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .field-input {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
+    color: var(--ink);
+    padding: 6px 0 8px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus {
+    border-color: var(--red);
+  }
+
+  .field-input::placeholder {
+    color: var(--placeholder);
+  }
+
+  .hint-text {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 12px;
+    font-style: italic;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+</style>

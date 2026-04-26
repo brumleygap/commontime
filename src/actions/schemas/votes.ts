@@ -1,25 +1,30 @@
-// src/actions/schemas/votes.ts
 import { z } from "zod";
 
 export const SubmitVoteSchema = z.object({
     token: z.string().min(1),
 
-    // empty input often arrives as null
     name: z
         .union([z.string(), z.null()])
         .transform((v) => (typeof v === "string" ? v.trim() : ""))
         .transform((v) => (v.length ? v : undefined))
         .optional(),
 
-    // checkboxes: single value, multiple values, or none
-    optionIds: z
-        .union([
-            z.array(z.coerce.number().int()), // multiple checkboxes
-            z.coerce.number().int(),          // single checkbox
-            z.null(),                         // none
-        ])
-        .transform((v) =>
-            Array.isArray(v) ? v : v == null ? [] : [v]
-        )
-        .refine((arr) => arr.length >= 1, "Pick at least one time option."),
+    // JSON-encoded array of {optionId, availability} pairs.
+    // availability: 0=busy, 1=yes, 2=maybe
+    voteData: z.preprocess(
+        (v) => {
+            if (typeof v === "string") {
+                try { return JSON.parse(v); } catch { return []; }
+            }
+            return Array.isArray(v) ? v : [];
+        },
+        z
+            .array(
+                z.object({
+                    optionId: z.coerce.number().int().positive(),
+                    availability: z.coerce.number().int().min(0).max(2),
+                })
+            )
+            .min(1, "Vote data is required.")
+    ),
 });
