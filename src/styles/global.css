@@ -3,14 +3,34 @@
 @tailwind utilities;
 
 :root {
-  --ink: #0f0f0e;
-  --cream: #f5f2ec;
-  --red: #c8102e;
-  --staff: #d4cfc6;
-  --muted: #5c5752;
-  --green: #1a6b3a;
+  /* ── Core palette ───────────────────────────────────── */
+  --ink:         #0f0f0e;
+  --cream:       #f5f2ec;
+  --red:         #c8102e;
+  --staff:       #d4cfc6;   /* borders, dividers */
+  --muted:       #5c5752;   /* secondary text */
+  --green:       #1a6b3a;
   --green-light: #e8f5ee;
-  --white: #ffffff;
+  --white:       #ffffff;
+
+  /* ── Tristate vote state colors ─────────────────────── */
+  --yes:         #166534;   /* "yes" text */
+  --yes-bg:      #f0fdf4;   /* "yes" background */
+  --maybe:       #d97706;   /* "maybe" border / accent */
+  --maybe-text:  #92400e;   /* "maybe" dark text (banners) */
+  --maybe-mid:   #b45309;   /* "maybe" body text */
+  --maybe-bg:    #fffbeb;   /* "maybe" background */
+  --busy-bg:     #fff5f5;   /* "busy/no" and error backgrounds */
+
+  /* ── Surface & UI neutrals ──────────────────────────── */
+  --placeholder: #9ca3af;   /* input placeholder */
+  --bullet:      #adadad;   /* unset vote bullet */
+  --on-dark:     #c8c4bc;   /* text on ink-dark surfaces */
+  --on-dark-dim: #c0bbb3;   /* dimmer text on ink-dark surfaces */
+  --day-bg:      #f0ede7;   /* day-group header row */
+  --btn-border:  #c4bfb8;   /* inactive toggle button border */
+  --btn-inactive:#7a756e;   /* inactive toggle button icon/text */
+  --winner:      #4ade80;   /* winner column accent */
 }
 
 body {
@@ -74,5 +94,5 @@ body {
   font-size: 10px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: #5c5752;
+  color: var(--muted);
 }

@@ -4,14 +4,14 @@ const user = Astro.locals.user;
 
 <header style="background: var(--ink); border-bottom: 3px solid var(--red);">
   <div class="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-2 no-underline" style="text-decoration: none;">
-      <span style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: #fff; line-height: 1;">𝄴</span>
-      <span style="font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.05em;">
+    <a href="/" class="flex items-center gap-2" style="text-decoration: none;">
+      <span style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: var(--white); line-height: 1;">𝄴</span>
+      <span style="font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.05em;">
         Common<span style="color: var(--red); font-style: italic;">Time</span>
       </span>
     </a>
 
-    <div style="font-family: 'DM Mono', monospace; font-size: 9px; color: #c8c4bc; text-align: right; line-height: 1.8;">
+    <div style="font-family: 'DM Mono', monospace; font-size: 9px; color: var(--on-dark); text-align: right; line-height: 1.8;">
       {user ? (
         <>
           <span class="hidden sm:block">{user.email}</span>
@@ -22,7 +22,7 @@ const user = Astro.locals.user;
           </form>
         </>
       ) : (
-        <a href="/login" style="color: #c8c4bc; text-decoration: underline; text-underline-offset: 2px;">Log in</a>
+        <a href="/login" style="color: var(--on-dark); text-decoration: underline; text-underline-offset: 2px;">Log in</a>
       )}
     </div>
   </div>
