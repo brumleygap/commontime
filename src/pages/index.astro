@@ -3,22 +3,123 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 ---
 
 <BaseLayout title="CommonTime">
-  <section class="mx-auto max-w-5xl px-4 py-16 text-center">
-    <h2 class="text-3xl font-bold tracking-tight">
-      Find a time that works
-    </h2>
+  <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
+    <!-- Staff lines bg -->
+    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
 
-    <p class="mt-4 text-slate-600">
-      Pick dates. Share a link. See what works.
-    </p>
+    <!-- Time-signature watermark -->
+    <div class="time-sig" aria-hidden="true">4<br />4</div>
 
-    <div class="mt-8">
-      <a
-        href="/create"
-        class="inline-flex items-center rounded-md bg-red-600 px-6 py-3 text-white font-semibold hover:bg-red-700"
-      >
-        Create a Poll
+    <div class="relative z-10 mx-auto max-w-2xl px-6 py-24 text-center flex flex-col items-center">
+      <!-- 𝄴 watermark -->
+      <div class="ct-watermark" aria-hidden="true">𝄴</div>
+
+      <p class="ct-eyebrow mb-5">Schedule together</p>
+
+      <h1 class="hero-headline">
+        Find a time that<br /><em>works.</em>
+      </h1>
+
+      <p class="hero-sub">
+        Pick dates. Share a link. See what works — all in common time.
+      </p>
+
+      <a href="/create" class="ct-btn" style="margin-bottom: 64px;">
+        ♩ Create a Poll
       </a>
+
+      <div class="note-row">
+        <div class="note-item">
+          <span class="note-glyph">♩</span>
+          <span class="ct-eyebrow">Pick dates</span>
+        </div>
+        <div class="note-item">
+          <span class="note-glyph">♪</span>
+          <span class="ct-eyebrow">Share link</span>
+        </div>
+        <div class="note-item">
+          <span class="note-glyph">♫</span>
+          <span class="ct-eyebrow">Find time</span>
+        </div>
+      </div>
     </div>
   </section>
 </BaseLayout>
+
+<style>
+  .time-sig {
+    position: absolute;
+    right: 6%;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    color: var(--ink);
+    opacity: 0.05;
+    line-height: 0.85;
+    font-size: clamp(72px, 12vw, 140px);
+    text-align: center;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .ct-watermark {
+    font-size: clamp(120px, 22vw, 220px);
+    line-height: 1;
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    color: var(--ink);
+    opacity: 0.05;
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    letter-spacing: -10px;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .hero-headline {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(44px, 9vw, 80px);
+    font-weight: 900;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .hero-headline em {
+    color: var(--red);
+    font-style: italic;
+  }
+
+  .hero-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 16px;
+    color: var(--muted);
+    line-height: 1.75;
+    margin-bottom: 44px;
+    max-width: 380px;
+  }
+
+  .note-row {
+    display: flex;
+    justify-content: center;
+    gap: 44px;
+  }
+
+  .note-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .note-glyph {
+    font-size: 32px;
+    opacity: 0.2;
+    color: var(--ink);
+    line-height: 1;
+  }
+</style>

@@ -1,3 +1,78 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --ink: #0f0f0e;
+  --cream: #f5f2ec;
+  --red: #c8102e;
+  --staff: #d4cfc6;
+  --muted: #8a857c;
+  --green: #1a6b3a;
+  --green-light: #e8f5ee;
+  --white: #ffffff;
+}
+
+body {
+  font-family: 'Libre Baskerville', Georgia, serif;
+  background: var(--cream);
+  color: var(--ink);
+}
+
+/* Shared staff-lines decorative background */
+.staff-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0px,
+    transparent 30px,
+    rgba(180, 170, 155, 0.18) 30px,
+    rgba(180, 170, 155, 0.18) 31px
+  );
+  pointer-events: none;
+}
+
+/* Shared primary button */
+.ct-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--red);
+  color: var(--white);
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 13px 28px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  position: relative;
+  transition: opacity 0.15s;
+  letter-spacing: 0.02em;
+}
+
+.ct-btn::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--ink);
+  pointer-events: none;
+}
+
+.ct-btn:hover {
+  opacity: 0.9;
+}
+
+/* Eyebrow label style */
+.ct-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

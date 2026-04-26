@@ -1,121 +1,363 @@
-
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
 
 const result = await Astro.getActionResult(actions.createPoll);
 
-if (result?.data && result.data.ok) {
+if (result?.data?.ok) {
   return Astro.redirect(`/poll/${result.data.token}`);
 }
 ---
 
 <BaseLayout title="Create Poll">
-  <section class="mx-auto max-w-3xl px-4 py-12">
-    <h2 class="text-2xl font-bold text-slate-900">Create a poll</h2>
-    <p class="mt-2 text-slate-600">Give it a name and choose possible dates and times.</p>
+  <section class="relative overflow-hidden">
+    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
 
-    {result?.error && (
-      <div class="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-red-800">
-        <p class="font-semibold">Error:</p>
-        {result.error.message && (
-          <p class="mt-2 font-medium">{result.error.message}</p>
-        )}
-        <details class="mt-3">
-          <summary class="cursor-pointer text-sm font-medium">Technical details</summary>
-          <pre class="mt-2 text-xs whitespace-pre-wrap overflow-auto">
-{JSON.stringify(result.error, null, 2)}
-          </pre>
-        </details>
-      </div>
-    )}
-
-    <form method="POST" action={actions.createPoll} class="mt-8 space-y-6">
-      <input type="hidden" name="timezone" value="America/New_York" />
-
-      <div>
-        <label for="title" class="block text-sm font-medium text-slate-700">Poll title</label>
-        <input
-          id="title"
-          name="title"
-          type="text"
-          required
-          class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500"
-        />
+    <div class="relative z-10 mx-auto max-w-2xl px-4 py-10">
+      <!-- Page header -->
+      <div class="page-header">
+        <p class="ct-eyebrow mb-1">New poll</p>
+        <h1 class="page-title">Set the <em>tempo</em></h1>
       </div>
 
-      <div>
-        <label for="description" class="block text-sm font-medium text-slate-700">Description (optional)</label>
-        <textarea
-          id="description"
-          name="description"
-          rows="3"
-          class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500"
-        ></textarea>
-      </div>
+      {result?.error && (
+        <div class="error-banner">
+          <strong>Error:</strong> {result.error.message}
+        </div>
+      )}
 
-      <div>
-        <label class="block text-sm font-medium text-slate-700">Possible date & time options</label>
-
-        <!-- Hidden field that will contain the array -->
+      <form method="POST" action={actions.createPoll} id="create-form" class="create-card">
+        <input type="hidden" name="timezone" value="America/New_York" />
         <input type="hidden" name="options" id="options-data" />
 
-        <!-- Visible datetime inputs (NOT submitted directly) -->
-        <input
-          type="datetime-local"
-          class="datetime-option mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500"
-          required
-        />
+        <!-- Title -->
+        <div class="field-group">
+          <label for="title" class="field-label">Poll title</label>
+          <input
+            id="title"
+            name="title"
+            type="text"
+            required
+            autocomplete="off"
+            class="field-input"
+            placeholder="e.g. Team Dinner, Band Practice…"
+          />
+        </div>
 
-        <input
-          type="datetime-local"
-          class="datetime-option mt-2 block w-full rounded-md border-slate-300 shadow-sm focus:border-red-500 focus:ring-red-500"
-          required
-        />
+        <!-- Description -->
+        <div class="field-group">
+          <label for="description" class="field-label">
+            Description <span class="field-label-optional">(optional)</span>
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            rows="3"
+            class="field-textarea"
+            placeholder="Add any context or notes…"
+          ></textarea>
+        </div>
 
-        <p class="mt-2 text-xs text-slate-500">
-          Enter the possible times. People choose availability on the next screen.
-        </p>
-      </div>
+        <!-- Date/time divider -->
+        <div class="section-divider">
+          <div class="divider-line"></div>
+          <span class="divider-label">♩ Date &amp; time options</span>
+          <div class="divider-line"></div>
+        </div>
 
-      <div class="flex justify-end gap-3">
-        <a href="/" class="rounded-md border px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Cancel</a>
-        <button type="submit" class="rounded-md bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700">
-          Create poll
+        <!-- Dynamic slot list -->
+        <div id="slots-container">
+          <div class="datetime-slot">
+            <span class="slot-icon" aria-hidden="true">♩</span>
+            <input type="datetime-local" class="slot-input datetime-option" />
+            <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
+          </div>
+        </div>
+
+        <button type="button" id="add-slot" class="add-slot-btn">
+          <span aria-hidden="true">+</span> Add another time
         </button>
-      </div>
-    </form>
+
+        <p class="hint-text">People choose their availability on the next screen.</p>
+
+        <div class="form-actions">
+          <a href="/" class="btn-ghost">Cancel</a>
+          <button type="submit" class="ct-btn" style="font-size: 13px; padding: 11px 22px;">
+            Create poll →
+          </button>
+        </div>
+      </form>
+    </div>
   </section>
 </BaseLayout>
 
-<script>
-  function syncOptions() {
-    const values = Array.from(document.querySelectorAll<HTMLInputElement>('.datetime-option'))
-      .map(el => el.value)
-      .filter(v => v !== '');
-    const hidden = document.getElementById('options-data') as HTMLInputElement | null;
-    if (hidden) hidden.value = JSON.stringify(values);
+<style>
+  .page-header {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--staff);
   }
 
-  function init() {
-    document.querySelectorAll('.datetime-option').forEach(el => {
-      el.addEventListener('change', syncOptions);
-    });
+  .page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(28px, 6vw, 40px);
+    font-weight: 900;
+    color: var(--ink);
+    line-height: 1.1;
+  }
 
-    document.querySelector('form')?.addEventListener('submit', (e) => {
-      syncOptions();
-      const hidden = document.getElementById('options-data') as HTMLInputElement | null;
-      const values = JSON.parse(hidden?.value || '[]');
-      if (values.length === 0) {
-        e.preventDefault();
-        alert('Please fill in at least one date & time option.');
+  .page-title em {
+    color: var(--red);
+    font-style: italic;
+  }
+
+  .error-banner {
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: #fff5f5;
+    border-left: 3px solid var(--red);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  .create-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--red);
+    padding: 28px 24px;
+  }
+
+  .field-group {
+    margin-bottom: 22px;
+  }
+
+  .field-label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .field-label-optional {
+    font-style: italic;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.65;
+  }
+
+  .field-input {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
+    color: var(--ink);
+    padding: 6px 0 8px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus {
+    border-color: var(--red);
+  }
+
+  .field-input::placeholder {
+    color: var(--staff);
+  }
+
+  .field-textarea {
+    width: 100%;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--ink);
+    background: var(--white);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 13px;
+    color: var(--ink);
+    padding: 10px 12px;
+    outline: none;
+    resize: vertical;
+    min-height: 80px;
+    transition: border-color 0.2s;
+  }
+
+  .field-textarea:focus {
+    border-color: var(--red);
+    border-left-color: var(--red);
+  }
+
+  .field-textarea::placeholder {
+    color: var(--staff);
+  }
+
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 16px;
+  }
+
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--staff);
+  }
+
+  .divider-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .datetime-slot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--red);
+    background: var(--white);
+    margin-bottom: 8px;
+  }
+
+  .slot-icon {
+    color: var(--red);
+    font-size: 14px;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+
+  .slot-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .slot-remove {
+    background: none;
+    border: none;
+    color: var(--staff);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .slot-remove:hover {
+    color: var(--red);
+  }
+
+  .add-slot-btn {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed var(--staff);
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s;
+    margin-bottom: 8px;
+  }
+
+  .add-slot-btn:hover {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .hint-text {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .btn-ghost {
+    background: none;
+    border: none;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 8px 12px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+</style>
+
+<script>
+  const container = document.getElementById("slots-container")!;
+  const addBtn = document.getElementById("add-slot")!;
+  const form = document.getElementById("create-form") as HTMLFormElement;
+  const optionsData = document.getElementById("options-data") as HTMLInputElement;
+
+  function makeSlot(): HTMLDivElement {
+    const div = document.createElement("div");
+    div.className = "datetime-slot";
+    div.innerHTML = `
+      <span class="slot-icon" aria-hidden="true">♩</span>
+      <input type="datetime-local" class="slot-input datetime-option" />
+      <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
+    `;
+    div.querySelector(".slot-remove")!.addEventListener("click", () => {
+      if (container.querySelectorAll(".datetime-slot").length > 1) {
+        div.remove();
       }
     });
+    return div;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  // Wire up remove button on the initial slot
+  container.querySelector(".slot-remove")!.addEventListener("click", () => {
+    if (container.querySelectorAll(".datetime-slot").length > 1) {
+      (container.querySelector(".datetime-slot") as HTMLElement).remove();
+    }
+  });
+
+  addBtn.addEventListener("click", () => {
+    container.appendChild(makeSlot());
+  });
+
+  form.addEventListener("submit", (e) => {
+    const values = Array.from(
+      container.querySelectorAll<HTMLInputElement>(".datetime-option")
+    )
+      .map((el) => el.value.trim())
+      .filter(Boolean);
+
+    if (values.length === 0) {
+      e.preventDefault();
+      alert("Please add at least one date & time option.");
+      return;
+    }
+
+    optionsData.value = JSON.stringify(values);
+  });
 </script>

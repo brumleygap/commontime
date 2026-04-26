@@ -1,9 +1,9 @@
 import { createPoll } from "./polls";
-import { submitVoteDebug } from "./votes";
+import { submitVote } from "./votes";
 import { sendMagicLink } from "./auth";
 
 export const server = {
     createPoll,
-    submitVoteDebug,
+    submitVote,
     sendMagicLink,
 };

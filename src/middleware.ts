@@ -1,6 +1,8 @@
 import { defineMiddleware } from "astro:middleware";
 
-const PUBLIC_PATHS = ["/login", "/auth/verify"];
+// Poll pages and the home/create pages are publicly accessible.
+// Magic-link auth paths must also be public.
+const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/poll/", "/create"];
 
 export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
@@ -26,7 +28,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
 
     const { pathname } = context.url;
-    const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+    const isPublic = pathname === "/" || PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
 
     if (!context.locals.user && !isPublic) {
         return context.redirect("/login");
