@@ -176,7 +176,7 @@ function cellColor(av: number | undefined): string {
   if (av === 1) return "#166534";
   if (av === 2) return "#f59e0b";
   if (av === 0) return "var(--red)";
-  return "var(--staff)";
+  return "#9ca3af";
 }
 ---
 
@@ -851,7 +851,7 @@ function cellColor(av: number | undefined): string {
     if (vibe === 1) bullet.style.background = "#166534";
     else if (vibe === 2) bullet.style.background = "#f59e0b";
     else if (vibe === 0) bullet.style.background = "var(--red)";
-    else bullet.style.background = "var(--staff)";
+    else bullet.style.background = "#adadad";
   }
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
