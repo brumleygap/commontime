@@ -301,7 +301,7 @@ function cellColor(av: number | undefined): string {
     <!-- ── Availability grid ──────────────────────────────────────────────── -->
     <div class="avail-section">
       <h2 class="avail-title">
-        <span style="color:var(--red);font-size:20px;margin-right:8px;" aria-hidden="true">𝄴</span>
+        <span style="font-family:'Playfair Display',serif;color:var(--red);font-size:20px;margin-right:8px;" aria-hidden="true">𝄴</span>
         Availability
       </h2>
 
@@ -515,10 +515,10 @@ function cellColor(av: number | undefined): string {
   .field-label {
     display: block;
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: #5c5752;
     margin-bottom: 6px;
   }
 
@@ -532,6 +532,10 @@ function cellColor(av: number | undefined): string {
     color: var(--ink);
     padding: 5px 0 7px;
     outline: none;
+  }
+
+  .name-input::placeholder {
+    color: #9ca3af;
   }
 
   .name-input:focus {
@@ -561,7 +565,8 @@ function cellColor(av: number | undefined): string {
 
   .vibe-legend-label {
     font-family: 'DM Mono', monospace;
-    font-size: 8px;
+    font-size: 9px;
+    font-weight: 500;
   }
 
   /* Day groups */
@@ -604,10 +609,10 @@ function cellColor(av: number | undefined): string {
   }
 
   .time-bullet {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--staff);
+    background: #adadad;
     flex-shrink: 0;
     transition: background 0.15s;
   }
@@ -625,13 +630,13 @@ function cellColor(av: number | undefined): string {
   }
 
   .vibe-btn {
-    width: 32px;
-    height: 28px;
+    width: 36px;
+    height: 30px;
     font-family: 'DM Mono', monospace;
-    font-size: 13px;
-    border: 1px solid var(--staff);
+    font-size: 14px;
+    border: 1px solid #c4bfb8;
     background: transparent;
-    color: var(--staff);
+    color: #7a756e;
     cursor: pointer;
     display: flex;
     align-items: center;

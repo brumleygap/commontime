@@ -71,8 +71,8 @@ body {
 /* Eyebrow label style */
 .ct-eyebrow {
   font-family: 'DM Mono', monospace;
-  font-size: 9px;
-  letter-spacing: 0.25em;
+  font-size: 10px;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: #5c5752;
 }
