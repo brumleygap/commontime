@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      # astro and its adapter must be upgraded together: cloudflare@13+ requires astro@6+
+      astro-ecosystem:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+    ignore:
+      # Block major-version bumps for the Astro ecosystem until we're ready to
+      # do the full Astro 6 + Tailwind 4 migration together.
+      - dependency-name: "astro"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@astrojs/cloudflare"
+        update-types: ["version-update:semver-major"]
