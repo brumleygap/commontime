@@ -9,7 +9,4 @@ updates:
         patterns:
           - "astro"
           - "@astrojs/*"
-    ignore:
-      # Stay on Tailwind 3 — Tailwind 4 requires migration work.
-      - dependency-name: "tailwindcss"
-        update-types: ["version-update:semver-major"]
+
