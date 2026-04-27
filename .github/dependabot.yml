@@ -17,3 +17,5 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@astrojs/cloudflare"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
