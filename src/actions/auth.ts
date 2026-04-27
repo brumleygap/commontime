@@ -5,7 +5,7 @@ import { sendMagicLinkEmail } from "../lib/email";
 export const sendMagicLink = defineAction({
     accept: "form",
     input: z.object({
-        email: z.string().email("Please enter a valid email address."),
+        email: z.email("Please enter a valid email address."),
     }),
 
     async handler(input, context) {
