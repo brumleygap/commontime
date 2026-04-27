@@ -1,5 +1,5 @@
 {
-  "main": "dist/_worker.js/index.js",
+  "main": "@astrojs/cloudflare/entrypoints/server",
   "name": "commontime",
   "compatibility_date": "2026-01-02",
   "compatibility_flags": [
