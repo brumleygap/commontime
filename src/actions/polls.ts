@@ -1,5 +1,5 @@
-// src/actions/polls.ts
 import { defineAction, ActionError } from "astro:actions";
+import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
 
 function makeToken(length = 12) {
@@ -19,17 +19,7 @@ export const createPoll = defineAction({
         try {
             const { title, description, timezone, options } = input;
 
-            // Check database binding
-            const db = context.locals?.runtime?.env?.DB;
-            if (!db) {
-                console.error("Database (D1) binding 'DB' is not available in action context");
-                throw new ActionError({
-                    code: "BAD_REQUEST",
-                    message:
-                        "Database (D1) is not available. Check Cloudflare Pages binding configuration: Settings → Functions → D1 Database Bindings.",
-                });
-            }
-
+            const db = env.DB;
             const token = makeToken();
 
             const creatorId = context.locals.user?.id ?? null;

@@ -1,4 +1,5 @@
 import { defineAction, ActionError } from "astro:actions";
+import { env } from "cloudflare:workers";
 import { SubmitVoteSchema } from "./schemas/votes";
 
 export const submitVote = defineAction({
@@ -6,13 +7,7 @@ export const submitVote = defineAction({
     input: SubmitVoteSchema,
 
     async handler(input, context) {
-        const db = context.locals?.runtime?.env?.DB;
-        if (!db) {
-            throw new ActionError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Database (D1) is not available. Check Cloudflare Pages binding configuration.",
-            });
-        }
+        const db = env.DB;
 
         try {
             const poll = await db

@@ -1,16 +1,14 @@
 import type { APIRoute } from "astro";
+import { env } from "cloudflare:workers";
 
-export const POST: APIRoute = async ({ locals, cookies, redirect }) => {
+export const POST: APIRoute = async ({ cookies, redirect }) => {
     const sessionToken = cookies.get("session")?.value;
 
     if (sessionToken) {
-        const db = locals?.runtime?.env?.DB;
-        if (db) {
-            await db
-                .prepare("DELETE FROM sessions WHERE token = ?")
-                .bind(sessionToken)
-                .run();
-        }
+        await env.DB
+            .prepare("DELETE FROM sessions WHERE token = ?")
+            .bind(sessionToken)
+            .run();
     }
 
     cookies.delete("session", { path: "/" });

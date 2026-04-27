@@ -1,4 +1,5 @@
 import { defineMiddleware } from "astro:middleware";
+import { env } from "cloudflare:workers";
 
 // Poll pages and the home/create pages are publicly accessible.
 // Magic-link auth paths must also be public.
@@ -8,11 +9,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
 
     if (sessionToken) {
-        const db = context.locals?.runtime?.env?.DB;
-        if (!db) return next();
         const now = new Date().toISOString();
 
-        const row = await db
+        const row = await env.DB
             .prepare(
                 `SELECT s.user_id, u.email
                  FROM sessions s

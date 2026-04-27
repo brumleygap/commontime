@@ -1,9 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
+import { env } from "cloudflare:workers";
 
 const { token } = Astro.params;
-const db = Astro.locals.runtime.env.DB;
+const db = env.DB;
 
 const voteResult = await Astro.getActionResult(actions.submitVote);
 const voteError = voteResult?.error;

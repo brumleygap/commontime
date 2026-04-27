@@ -1,5 +1,6 @@
 import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
+import { env } from "cloudflare:workers";
 import { sendMagicLinkEmail } from "../lib/email";
 
 export const sendMagicLink = defineAction({
@@ -9,31 +10,14 @@ export const sendMagicLink = defineAction({
     }),
 
     async handler(input, context) {
-        const db = context.locals?.runtime?.env?.DB;
-        const emailBinding = context.locals?.runtime?.env?.EMAIL;
-
-        if (!db) {
-            throw new ActionError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Database is not available. Check Cloudflare Pages binding configuration: Settings → Functions → D1 Database Bindings.",
-            });
-        }
-
-        if (!emailBinding) {
-            throw new ActionError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Email service binding (EMAIL) is not available. Add a Service binding in the Cloudflare Pages dashboard: your project → Settings → Bindings → Add → Service binding → Variable name: EMAIL, Service: commontime-email-sender.",
-            });
-        }
-
         // Find or create user
-        let user = await db
+        let user = await env.DB
             .prepare("SELECT id FROM users WHERE email = ?")
             .bind(input.email)
             .first<{ id: number }>();
 
         if (!user) {
-            user = await db
+            user = await env.DB
                 .prepare("INSERT INTO users (email) VALUES (?) RETURNING id")
                 .bind(input.email)
                 .first<{ id: number }>();
@@ -46,7 +30,7 @@ export const sendMagicLink = defineAction({
         const token = crypto.randomUUID().replace(/-/g, "");
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-        await db
+        await env.DB
             .prepare("INSERT INTO magic_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
             .bind(user.id, token, expiresAt)
             .run();
@@ -55,7 +39,7 @@ export const sendMagicLink = defineAction({
         const magicLink = `${origin}/auth/verify?token=${token}`;
 
         try {
-            await sendMagicLinkEmail(emailBinding, input.email, magicLink);
+            await sendMagicLinkEmail(env.EMAIL, input.email, magicLink);
         } catch (err: any) {
             console.error("Failed to send magic link email:", err);
             throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to send email. Please try again." });
