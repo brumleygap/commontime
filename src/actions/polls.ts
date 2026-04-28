@@ -1,4 +1,5 @@
 import { defineAction, ActionError } from "astro:actions";
+import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
 
@@ -78,5 +79,47 @@ export const createPoll = defineAction({
                 message: `Failed to create poll: ${errorMessage}`,
             });
         }
+    },
+});
+
+export const lockPoll = defineAction({
+    accept: "form",
+    input: z.object({
+        token: z.string(),
+        optionId: z.coerce.number().int(),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to finalize a poll." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const option = await db
+            .prepare(`SELECT id FROM poll_options WHERE id = ? AND poll_id = ?`)
+            .bind(input.optionId, poll.id)
+            .first<{ id: number }>();
+
+        if (!option) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "Invalid option." });
+        }
+
+        await db
+            .prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
+            .bind(input.optionId, poll.id)
+            .run();
+
+        return { ok: true };
     },
 });

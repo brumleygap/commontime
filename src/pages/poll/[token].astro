@@ -10,11 +10,14 @@ const voteResult = await Astro.getActionResult(actions.submitVote);
 const voteError = voteResult?.error;
 const voteSuccess = voteResult?.data?.ok === true;
 
+const lockResult = await Astro.getActionResult(actions.lockPoll);
+const lockError = lockResult?.error;
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 const poll = await db
   .prepare(
-    `SELECT id, token, title, description, timezone, creator_id, created_at
+    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id
      FROM polls WHERE token = ?`
   )
   .bind(token)
@@ -26,6 +29,7 @@ const poll = await db
     timezone: string;
     creator_id: number | null;
     created_at: string;
+    chosen_option_id: number | null;
   }>();
 
 if (!poll) return new Response("Poll not found", { status: 404 });
@@ -95,6 +99,18 @@ if (currentUser) {
     for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
   }
 }
+
+// ── Poll state ────────────────────────────────────────────────────────────────
+
+const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.creator_id);
+const isOpen = poll.chosen_option_id === null;
+
+const chosenOption = poll.chosen_option_id
+  ? await db
+      .prepare(`SELECT id, option_datetime FROM poll_options WHERE id = ?`)
+      .bind(poll.chosen_option_id)
+      .first<{ id: number; option_datetime: string }>()
+  : null;
 
 // ── Build vote map for grid ───────────────────────────────────────────────────
 
@@ -170,6 +186,13 @@ function fmtColDate(dt: string) {
   };
 }
 
+function fmtFull(dt: string) {
+  const d = new Date(dt);
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    + " · "
+    + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 // Cell background for a given availability value
 function cellBg(av: number | undefined): string {
   if (av === 1) return "background:var(--yes-bg)";
@@ -210,106 +233,117 @@ function cellColor(av: number | undefined): string {
 
   <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
 
-    <!-- ── Vote form ──────────────────────────────────────────────────────── -->
-    <div class="vote-card">
-      <div class="vote-card-head">
-        <h2 class="vote-card-title">Your availability</h2>
-        <p class="vote-card-sub">
-          {myParticipantId ? "Update your response below." : "Mark each time as yes, maybe, or busy."}
-        </p>
+    <!-- ── Finalized banner / vote form ────────────────────────────────── -->
+    {!isOpen ? (
+      <div class="finalized-banner">
+        <div class="finalized-banner-icon" aria-hidden="true">★</div>
+        <div>
+          <p class="finalized-eyebrow">Date confirmed</p>
+          <p class="finalized-date">{chosenOption ? fmtFull(chosenOption.option_datetime) : ""}</p>
+          <p class="finalized-sub">This poll is closed. Thanks to everyone who responded.</p>
+        </div>
       </div>
-
-      {voteSuccess && (
-        <div class="success-banner">
-          <strong>Response saved!</strong>
-          <span>Scroll down to see the updated availability.</span>
-        </div>
-      )}
-
-      {voteError && (
-        <div class="error-banner-inline">
-          <strong>Couldn't save your response.</strong>
-          {voteError.message && <span>{voteError.message}</span>}
-        </div>
-      )}
-
-      {myParticipantId && (
-        <div class="welcome-banner">
-          <strong>Welcome back{currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
-          <span>Your previous selections are loaded. Update any time.</span>
-        </div>
-      )}
-
-      <form method="POST" action={actions.submitVote} id="vote-form">
-        <input type="hidden" name="token" value={token} />
-        <input type="hidden" name="voteData" id="vote-data" />
-
-        <!-- Name row -->
-        <div class="name-row">
-          <label for="voter-name" class="field-label">Your name</label>
-          <input
-            id="voter-name"
-            name="name"
-            type="text"
-            autocomplete="name"
-            value={currentUser?.email ?? ""}
-            placeholder="e.g. Priya"
-            class="name-input"
-          />
+    ) : (
+      <div class="vote-card">
+        <div class="vote-card-head">
+          <h2 class="vote-card-title">Your availability</h2>
+          <p class="vote-card-sub">
+            {myParticipantId ? "Update your response below." : "Mark each time as yes, maybe, or busy."}
+          </p>
         </div>
 
-        <!-- Vibe legend -->
-        <div class="vibe-legend">
-          <div class="vibe-legend-item" style="background:var(--yes-bg)">
-            <span style="color:var(--yes);font-weight:700;">✓</span>
-            <span class="vibe-legend-label" style="color:var(--yes)">Yes</span>
+        {voteSuccess && (
+          <div class="success-banner">
+            <strong>Response saved!</strong>
+            <span>Scroll down to see the updated availability.</span>
           </div>
-          <div class="vibe-legend-item" style="background:var(--maybe-bg)">
-            <span style="color:var(--maybe);font-weight:700;">~</span>
-            <span class="vibe-legend-label" style="color:var(--maybe)">Maybe</span>
-          </div>
-          <div class="vibe-legend-item" style="background:var(--busy-bg)">
-            <span style="color:var(--red);font-weight:700;">✕</span>
-            <span class="vibe-legend-label" style="color:var(--red)">Busy</span>
-          </div>
-        </div>
+        )}
 
-        <!-- Day groups -->
-        {dayGroups.map((group) => (
-          <div class="day-group">
-            <div class="day-header">
-              <span class="day-name">{group.dayName}</span>
-              <span class="day-date">{group.shortDate}</span>
+        {voteError && (
+          <div class="error-banner-inline">
+            <strong>Couldn't save your response.</strong>
+            {voteError.message && <span>{voteError.message}</span>}
+          </div>
+        )}
+
+        {myParticipantId && (
+          <div class="welcome-banner">
+            <strong>Welcome back{currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
+            <span>Your previous selections are loaded. Update any time.</span>
+          </div>
+        )}
+
+        <form method="POST" action={actions.submitVote} id="vote-form">
+          <input type="hidden" name="token" value={token} />
+          <input type="hidden" name="voteData" id="vote-data" />
+
+          <!-- Name row -->
+          <div class="name-row">
+            <label for="voter-name" class="field-label">Your name</label>
+            <input
+              id="voter-name"
+              name="name"
+              type="text"
+              autocomplete="name"
+              value={currentUser?.email ?? ""}
+              placeholder="e.g. Priya"
+              class="name-input"
+            />
+          </div>
+
+          <!-- Vibe legend -->
+          <div class="vibe-legend">
+            <div class="vibe-legend-item" style="background:var(--yes-bg)">
+              <span style="color:var(--yes);font-weight:700;">✓</span>
+              <span class="vibe-legend-label" style="color:var(--yes)">Yes</span>
             </div>
-
-            {group.options.map((opt) => {
-              const existing = myVoteMap.get(opt.id);
-              return (
-                <div
-                  class="time-row"
-                  data-option-id={opt.id}
-                  data-init={existing ?? -1}
-                >
-                  <div class="time-bullet" data-bullet></div>
-                  <div class="time-label">{fmtTime(opt.option_datetime)}</div>
-                  <div class="vibe-btns">
-                    <button type="button" class="vibe-btn" data-vibe="1" title="Yes">✓</button>
-                    <button type="button" class="vibe-btn" data-vibe="2" title="Maybe">~</button>
-                    <button type="button" class="vibe-btn" data-vibe="0" title="Busy">✕</button>
-                  </div>
-                </div>
-              );
-            })}
+            <div class="vibe-legend-item" style="background:var(--maybe-bg)">
+              <span style="color:var(--maybe);font-weight:700;">~</span>
+              <span class="vibe-legend-label" style="color:var(--maybe)">Maybe</span>
+            </div>
+            <div class="vibe-legend-item" style="background:var(--busy-bg)">
+              <span style="color:var(--red);font-weight:700;">✕</span>
+              <span class="vibe-legend-label" style="color:var(--red)">Busy</span>
+            </div>
           </div>
-        ))}
 
-        <div class="vote-submit-row">
-          <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 20px;">
-            {myParticipantId ? "Update my response" : "Save my response"}
-          </button>
-        </div>
-      </form>
-    </div>
+          <!-- Day groups -->
+          {dayGroups.map((group) => (
+            <div class="day-group">
+              <div class="day-header">
+                <span class="day-name">{group.dayName}</span>
+                <span class="day-date">{group.shortDate}</span>
+              </div>
+
+              {group.options.map((opt) => {
+                const existing = myVoteMap.get(opt.id);
+                return (
+                  <div
+                    class="time-row"
+                    data-option-id={opt.id}
+                    data-init={existing ?? -1}
+                  >
+                    <div class="time-bullet" data-bullet></div>
+                    <div class="time-label">{fmtTime(opt.option_datetime)}</div>
+                    <div class="vibe-btns">
+                      <button type="button" class="vibe-btn" data-vibe="1" title="Yes">✓</button>
+                      <button type="button" class="vibe-btn" data-vibe="2" title="Maybe">~</button>
+                      <button type="button" class="vibe-btn" data-vibe="0" title="Busy">✕</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+
+          <div class="vote-submit-row">
+            <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 20px;">
+              {myParticipantId ? "Update my response" : "Save my response"}
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
 
     <!-- ── Availability grid ──────────────────────────────────────────────── -->
     <div class="avail-section">
@@ -328,17 +362,18 @@ function cellColor(av: number | undefined): string {
                 <th class="avail-name-hdr">Who</th>
                 {optionStats.map((opt) => {
                   const { date, time } = fmtColDate(opt.option_datetime);
-                  const isWinner = opt.score === maxScore && opt.score > 0;
+                  const isChosen = opt.id === poll.chosen_option_id;
+                  const isWinner = !isChosen && opt.score === maxScore && opt.score > 0;
                   return (
                     <th
-                      class={`avail-opt-hdr${isWinner ? " winner" : ""}`}
+                      class={`avail-opt-hdr${isChosen ? " chosen" : isWinner ? " winner" : ""}`}
                       title={[...opt.yesNames.map(n => `✓ ${n}`), ...opt.maybeNames.map(n => `~ ${n}`)].join("\n") || "No responses yet"}
                     >
                       <span class="avail-hdr-date">{date}</span>
                       <span class="avail-hdr-time">{time}</span>
-                      <span class={`avail-hdr-count${isWinner ? " hot" : ""}`}>
+                      <span class={`avail-hdr-count${isChosen ? " confirmed" : isWinner ? " hot" : ""}`}>
                         {opt.yesCount}/{respondedIds.size}
-                        {isWinner ? " ★" : ""}
+                        {isChosen ? " ★" : isWinner ? " ★" : ""}
                       </span>
                     </th>
                   );
@@ -382,6 +417,52 @@ function cellColor(av: number | undefined): string {
         </div>
       )}
     </div>
+
+    <!-- ── Finalize section (creator only, while open) ───────────────────── -->
+    {isCreator && isOpen && (
+      <div class="finalize-card">
+        <div class="finalize-card-head">
+          <h2 class="finalize-title">Finalize this poll</h2>
+          <p class="finalize-sub">Choose a date to lock in and close this poll to new responses.</p>
+        </div>
+
+        {lockError && (
+          <div class="error-banner-inline">
+            <strong>Couldn't finalize.</strong>
+            {lockError.message && <span>{lockError.message}</span>}
+          </div>
+        )}
+
+        <form method="POST" action={actions.lockPoll} class="finalize-form">
+          <input type="hidden" name="token" value={token} />
+
+          <div class="finalize-options">
+            {optionStats.map((opt, i) => {
+              const isTop = opt.score === maxScore && opt.score > 0;
+              return (
+                <label class={`finalize-option${isTop ? " top" : ""}`}>
+                  <input type="radio" name="optionId" value={opt.id} checked={i === 0} />
+                  <span class="finalize-option-inner">
+                    <span class="finalize-option-date">{fmtFull(opt.option_datetime)}</span>
+                    <span class="finalize-option-votes">
+                      <span style="color:var(--yes)">{opt.yesCount} yes</span>
+                      {opt.maybeCount > 0 && <span style="color:var(--maybe)">{opt.maybeCount} maybe</span>}
+                      {isTop && <span class="finalize-top-badge">★ top pick</span>}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div class="finalize-submit-row">
+            <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 24px;">
+              ★ Lock in this date
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
 
   </div>
 </BaseLayout>
@@ -826,6 +907,155 @@ function cellColor(av: number | undefined): string {
     font-size: 9px;
     color: var(--muted);
     margin-top: 6px;
+  }
+
+  /* ── Chosen column highlight ────────────────────────────────────────── */
+  .avail-opt-hdr.chosen {
+    border-top-color: var(--red);
+  }
+
+  .avail-hdr-count.confirmed {
+    color: var(--red);
+  }
+
+  /* ── Finalized banner ───────────────────────────────────────────────── */
+  .finalized-banner {
+    background: var(--green-light);
+    border: 1px solid var(--green);
+    border-left: 4px solid var(--green);
+    padding: 20px 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .finalized-banner-icon {
+    font-size: 28px;
+    color: var(--green);
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .finalized-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 6px;
+  }
+
+  .finalized-date {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.2;
+    margin-bottom: 6px;
+  }
+
+  .finalized-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* ── Finalize card ──────────────────────────────────────────────────── */
+  .finalize-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--ink);
+  }
+
+  .finalize-card-head {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .finalize-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .finalize-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .finalize-form {
+    padding: 16px 20px;
+  }
+
+  .finalize-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .finalize-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--staff);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .finalize-option:hover {
+    background: var(--day-bg);
+  }
+
+  .finalize-option.top {
+    border-color: var(--yes);
+    background: var(--yes-bg);
+  }
+
+  .finalize-option input[type="radio"] {
+    margin-top: 3px;
+    flex-shrink: 0;
+    accent-color: var(--ink);
+  }
+
+  .finalize-option-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .finalize-option-date {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .finalize-option-votes {
+    display: flex;
+    gap: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .finalize-top-badge {
+    color: var(--yes);
+    font-weight: 700;
+  }
+
+  .finalize-submit-row {
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--staff);
+    padding-top: 14px;
   }
 </style>
 

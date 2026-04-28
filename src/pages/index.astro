@@ -8,7 +8,9 @@ type PollRow = {
   token: string;
   title: string;
   created_at: string;
-  is_creator: number; // 1 | 0
+  is_creator: number;  // 1 | 0
+  is_locked: number;   // 1 if chosen_option_id is set
+  is_open: number;     // 1 if any option_datetime is in the future (and not locked)
   participant_count: number;
   responded_count: number;
   earliest_option: string | null;
@@ -23,6 +25,10 @@ if (user) {
       `SELECT
          p.token, p.title, p.created_at,
          (p.creator_id = ?) AS is_creator,
+         (p.chosen_option_id IS NOT NULL) AS is_locked,
+         (p.chosen_option_id IS NULL AND (SELECT COUNT(*) FROM poll_options
+          WHERE poll_id = p.id
+            AND option_datetime > strftime('%Y-%m-%dT%H:%M', 'now')) > 0) AS is_open,
          (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
          (SELECT COUNT(DISTINCT par.id)
           FROM participants par
@@ -48,6 +54,10 @@ if (user) {
         `SELECT
            p.token, p.title, p.created_at,
            0 AS is_creator,
+           (p.chosen_option_id IS NOT NULL) AS is_locked,
+           (p.chosen_option_id IS NULL AND (SELECT COUNT(*) FROM poll_options
+            WHERE poll_id = p.id
+              AND option_datetime > strftime('%Y-%m-%dT%H:%M', 'now')) > 0) AS is_open,
            (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
            (SELECT COUNT(DISTINCT par.id)
             FROM participants par
@@ -95,6 +105,11 @@ function fmtEarliest(dt: string | null) {
               <div class="poll-row-body">
                 <span class="poll-row-title">{poll.title}</span>
                 <div class="poll-row-meta">
+                  {poll.is_locked
+                    ? <span class="status-badge locked">date set</span>
+                    : poll.is_open
+                      ? <span class="status-badge open">open</span>
+                      : <span class="status-badge past">past</span>}
                   {poll.is_creator ? <span class="badge">yours</span> : null}
                   <span>{poll.responded_count} / {poll.participant_count} responded</span>
                   {poll.earliest_option && (
@@ -124,6 +139,9 @@ function fmtEarliest(dt: string | null) {
             <div class="poll-row-body">
               <span class="poll-row-title">{poll.title}</span>
               <div class="poll-row-meta">
+                {poll.is_open
+                  ? <span class="status-badge open">open</span>
+                  : <span class="status-badge past">past</span>}
                 <span>{poll.responded_count} / {poll.participant_count} responded</span>
                 {poll.earliest_option && (
                   <span>from {fmtEarliest(poll.earliest_option)}</span>
@@ -283,6 +301,29 @@ function fmtEarliest(dt: string | null) {
     color: var(--red);
     border: 1px solid var(--red);
     padding: 1px 5px;
+  }
+
+  .status-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+  }
+
+  .status-badge.open {
+    color: var(--yes);
+    border: 1px solid var(--yes);
+  }
+
+  .status-badge.locked {
+    color: var(--red);
+    border: 1px solid var(--red);
+  }
+
+  .status-badge.past {
+    color: var(--muted);
+    border: 1px solid var(--staff);
   }
 
   .poll-row-arrow {
