@@ -77,13 +77,26 @@ export const submitVote = defineAction({
                     throw new ActionError({ code: "BAD_REQUEST", message: "Please enter a valid email address." });
                 }
 
-                const editToken = crypto.randomUUID().replace(/-/g, "");
-                const row = await db
-                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, email) VALUES (?, ?, ?, ?) RETURNING id`)
-                    .bind(pollId, name, editToken, input.email)
+                // Upsert by email — handles cross-device returns (e.g. opened invite on phone,
+                // voting on laptop) without creating a duplicate participant row.
+                const existing = await db
+                    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND email = ?`)
+                    .bind(pollId, input.email)
                     .first<{ id: number }>();
-                if (!row) throw new Error("Failed to insert participant.");
-                participantId = row.id;
+
+                if (existing) {
+                    participantId = existing.id;
+                    await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
+                    await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
+                } else {
+                    const editToken = crypto.randomUUID().replace(/-/g, "");
+                    const row = await db
+                        .prepare(`INSERT INTO participants (poll_id, name, edit_token, email) VALUES (?, ?, ?, ?) RETURNING id`)
+                        .bind(pollId, name, editToken, input.email)
+                        .first<{ id: number }>();
+                    if (!row) throw new Error("Failed to insert participant.");
+                    participantId = row.id;
+                }
             }
 
             // Store ALL vote states (including busy=0), so we know who has responded.
