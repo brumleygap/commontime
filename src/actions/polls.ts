@@ -140,7 +140,7 @@ export const lockPoll = defineAction({
 
         // Fire and forget — email failures don't block the lock
         Promise.allSettled(
-            recipients.map((r) =>
+            recipients.map((r: { email: string }) =>
                 sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
             )
         ).catch(() => {});
@@ -257,7 +257,7 @@ export const unlockPoll = defineAction({
         ).results;
 
         Promise.allSettled(
-            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r: { email: string }) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
         ).catch(() => {});
 
         return { ok: true };
