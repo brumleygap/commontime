@@ -221,7 +221,10 @@ function fmtEarliest(dt: string | null) {
     color: var(--ink);
     text-decoration: none;
     border: 1px solid var(--ink);
-    padding: 7px 14px;
+    padding: 10px 16px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
     white-space: nowrap;
     transition: background 0.12s, color 0.12s;
     flex-shrink: 0;
@@ -458,5 +461,31 @@ function fmtEarliest(dt: string | null) {
   .guest-login-nudge a {
     color: var(--ink);
     text-underline-offset: 2px;
+  }
+
+  /* ── Mobile layout ──────────────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    .dash-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .new-poll-btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .poll-row {
+      padding: 14px 14px;
+    }
+
+    .poll-row-title {
+      font-size: 15px;
+    }
+
+    .poll-row-meta {
+      gap: 8px;
+    }
   }
 </style>

@@ -651,7 +651,7 @@ function cellColor(av: number | undefined): string {
 
   /* Name row */
   .name-row {
-    padding: 12px 20px;
+    padding: 14px 20px;
     border-bottom: 1px solid var(--staff);
   }
 
@@ -662,7 +662,7 @@ function cellColor(av: number | undefined): string {
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .name-input {
@@ -671,9 +671,9 @@ function cellColor(av: number | undefined): string {
     border-bottom: 2px solid var(--ink);
     background: transparent;
     font-family: 'Libre Baskerville', serif;
-    font-size: 14px;
+    font-size: 16px;
     color: var(--ink);
-    padding: 5px 0 7px;
+    padding: 6px 0 8px;
     outline: none;
   }
 
@@ -742,7 +742,7 @@ function cellColor(av: number | undefined): string {
   .time-row {
     display: flex;
     align-items: center;
-    padding: 8px 20px 8px 16px;
+    padding: 10px 16px 10px 16px;
     gap: 10px;
     border-bottom: 1px solid var(--staff);
   }
@@ -752,8 +752,8 @@ function cellColor(av: number | undefined): string {
   }
 
   .time-bullet {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--bullet);
     flex-shrink: 0;
@@ -762,21 +762,23 @@ function cellColor(av: number | undefined): string {
 
   .time-label {
     font-family: 'DM Mono', monospace;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--ink);
     flex: 1;
+    min-width: 0;
   }
 
   .vibe-btns {
     display: flex;
-    gap: 3px;
+    gap: 4px;
+    flex-shrink: 0;
   }
 
   .vibe-btn {
-    width: 36px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     font-family: 'DM Mono', monospace;
-    font-size: 14px;
+    font-size: 16px;
     border: 1px solid var(--btn-border);
     background: transparent;
     color: var(--btn-inactive);
@@ -785,6 +787,8 @@ function cellColor(av: number | undefined): string {
     align-items: center;
     justify-content: center;
     transition: all 0.1s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
 
   .vibe-btn[data-vibe="1"].active {
@@ -840,6 +844,7 @@ function cellColor(av: number | undefined): string {
 
   .avail-table-wrap {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border: 1px solid var(--staff);
     border-top: none;
   }
@@ -1148,7 +1153,7 @@ function cellColor(av: number | undefined): string {
     border-bottom: 2px solid var(--ink);
     background: transparent;
     font-family: 'DM Mono', monospace;
-    font-size: 12px;
+    font-size: 16px;
     color: var(--ink);
     padding: 6px 0;
     outline: none;
@@ -1194,6 +1199,67 @@ function cellColor(av: number | undefined): string {
   .invite-btn:hover {
     background: var(--ink);
     color: var(--cream);
+  }
+
+  /* ── Mobile layout ──────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    /* Give the poll header more breathing room */
+    .poll-header .mx-auto {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    /* Vote submit full-width */
+    .vote-submit-row {
+      justify-content: stretch;
+    }
+
+    .vote-submit-row .ct-btn {
+      width: 100%;
+      justify-content: center;
+      font-size: 15px !important;
+      padding: 13px 20px !important;
+    }
+
+    /* Finalize options: stack date and votes vertically with more space */
+    .finalize-option {
+      padding: 14px 12px;
+    }
+
+    .finalize-option-date {
+      font-size: 15px;
+    }
+
+    /* Finalize submit full-width */
+    .finalize-submit-row .ct-btn {
+      width: 100%;
+      justify-content: center;
+      font-size: 15px !important;
+      padding: 13px 20px !important;
+    }
+
+    /* Invite submit full-width */
+    .invite-submit-row {
+      justify-content: stretch;
+    }
+
+    .invite-btn {
+      width: 100%;
+      justify-content: center;
+      text-align: center;
+      font-size: 13px;
+      padding: 12px 18px;
+    }
+
+    /* Finalized banner: tighter on mobile */
+    .finalized-banner {
+      padding: 16px;
+      gap: 14px;
+    }
+
+    .finalized-date {
+      font-size: 18px;
+    }
   }
 </style>
 
