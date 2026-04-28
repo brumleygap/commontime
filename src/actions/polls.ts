@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail } from "../lib/email";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -99,18 +99,18 @@ export const lockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, timezone FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number }>();
+            .first<{ id: number; title: string; timezone: string }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
         const option = await db
-            .prepare(`SELECT id FROM poll_options WHERE id = ? AND poll_id = ?`)
+            .prepare(`SELECT id, option_datetime FROM poll_options WHERE id = ? AND poll_id = ?`)
             .bind(input.optionId, poll.id)
-            .first<{ id: number }>();
+            .first<{ id: number; option_datetime: string }>();
 
         if (!option) {
             throw new ActionError({ code: "BAD_REQUEST", message: "Invalid option." });
@@ -120,6 +120,29 @@ export const lockPoll = defineAction({
             .prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
             .bind(input.optionId, poll.id)
             .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+        const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
+
+        const recipients = (
+            await db
+                .prepare(`
+                    SELECT u.email
+                    FROM participants pa
+                    JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        // Fire and forget — email failures don't block the lock
+        Promise.allSettled(
+            recipients.map((r) =>
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, option.option_datetime, pollUrl, calendarUrl)
+            )
+        ).catch(() => {});
 
         return { ok: true };
     },
