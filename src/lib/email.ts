@@ -2,6 +2,7 @@ export async function sendFinalizationEmail(
     emailBinding: Fetcher,
     to: string,
     pollTitle: string,
+    pollDescription: string | null,
     chosenDatetime: string,
     pollUrl: string,
     calendarUrl: string,
@@ -12,6 +13,11 @@ export async function sendFinalizationEmail(
         " · " +
         d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
+    const descText = pollDescription ? `\n\n${pollDescription}` : "";
+    const descHtml = pollDescription
+        ? `<p style="font-style:italic;color:#555;margin:0 0 16px">${pollDescription}</p>`
+        : "";
+
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -19,10 +25,10 @@ export async function sendFinalizationEmail(
             to,
             from: { email: "hello@commontime.app", name: "CommonTime" },
             subject: `It's happening: ${pollTitle}`,
-            text: `Great news — a date has been confirmed for "${pollTitle}".\n\n${displayDate}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`,
+            text: `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDate}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`,
             html: `<p>Great news — a date has been confirmed.</p>
 <h2 style="font-family:Georgia,serif;margin:0 0 8px">${pollTitle}</h2>
-<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDate}</p>
+${descHtml}<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDate}</p>
 <p style="margin:0 0 8px"><a href="${calendarUrl}" style="color:#c8102e;font-weight:bold">Add to calendar →</a></p>
 <p style="margin:0 0 16px"><a href="${pollUrl}" style="color:#888;font-size:13px">View poll</a></p>
 <p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,

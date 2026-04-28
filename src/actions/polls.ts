@@ -99,9 +99,9 @@ export const lockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title, timezone FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description, timezone FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string; timezone: string }>();
+            .first<{ id: number; title: string; description: string | null; timezone: string }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -141,7 +141,7 @@ export const lockPoll = defineAction({
         // Fire and forget — email failures don't block the lock
         Promise.allSettled(
             recipients.map((r) =>
-                sendFinalizationEmail(env.EMAIL, r.email, poll.title, option.option_datetime, pollUrl, calendarUrl)
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
             )
         ).catch(() => {});
 
