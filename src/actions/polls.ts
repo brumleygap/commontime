@@ -139,11 +139,18 @@ export const lockPoll = defineAction({
         ).results;
 
         // Fire and forget — email failures don't block the lock
+        console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         Promise.allSettled(
             recipients.map((r: { email: string }) =>
                 sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
             )
-        ).catch(() => {});
+        ).then((results) => {
+            results.forEach((r, i) => {
+                if (r.status === "rejected") {
+                    console.error(`lockPoll: failed to send finalization email to ${recipients[i].email}:`, r.reason);
+                }
+            });
+        });
 
         return { ok: true };
     },
@@ -256,9 +263,16 @@ export const unlockPoll = defineAction({
                 .all<{ email: string }>()
         ).results;
 
+        console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         Promise.allSettled(
             recipients.map((r: { email: string }) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
-        ).catch(() => {});
+        ).then((results) => {
+            results.forEach((r, i) => {
+                if (r.status === "rejected") {
+                    console.error(`unlockPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
+                }
+            });
+        });
 
         return { ok: true };
     },
