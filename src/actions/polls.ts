@@ -138,18 +138,16 @@ export const lockPoll = defineAction({
                 .all<{ email: string }>()
         ).results;
 
-        // Fire and forget — email failures don't block the lock
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
-        Promise.allSettled(
+        const sendResults = await Promise.allSettled(
             recipients.map((r: { email: string }) =>
                 sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
             )
-        ).then((results) => {
-            results.forEach((r, i) => {
-                if (r.status === "rejected") {
-                    console.error(`lockPoll: failed to send finalization email to ${recipients[i].email}:`, r.reason);
-                }
-            });
+        );
+        sendResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`lockPoll: failed to send finalization email to ${recipients[i].email}:`, r.reason);
+            }
         });
 
         return { ok: true };
@@ -264,14 +262,13 @@ export const unlockPoll = defineAction({
         ).results;
 
         console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
-        Promise.allSettled(
+        const reopenResults = await Promise.allSettled(
             recipients.map((r: { email: string }) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
-        ).then((results) => {
-            results.forEach((r, i) => {
-                if (r.status === "rejected") {
-                    console.error(`unlockPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
-                }
-            });
+        );
+        reopenResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`unlockPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
+            }
         });
 
         return { ok: true };
