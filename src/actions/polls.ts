@@ -193,6 +193,7 @@ export const inviteParticipants = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
+        console.log(`inviteParticipants: sending invites for poll ${poll.id} to:`, unique);
         await Promise.all(
             unique.map(async (email) => {
                 // Find or create a participant row for this invitee so we can send a unique link
@@ -208,10 +209,16 @@ export const inviteParticipants = defineAction({
                         .prepare(`INSERT INTO participants (poll_id, email, edit_token) VALUES (?, ?, ?)`)
                         .bind(poll.id, email, editToken)
                         .run();
+                    console.log(`inviteParticipants: created participant row for ${email}`);
+                } else {
+                    console.log(`inviteParticipants: reusing existing participant row for ${email}`);
                 }
 
                 const inviteUrl = `${pollUrl}?invite=${editToken}`;
-                return sendPollInviteEmail(env.EMAIL, email, poll.title, inviteUrl, userEmail);
+                console.log(`inviteParticipants: sending invite email to ${email}`);
+                const result = await sendPollInviteEmail(env.EMAIL, email, poll.title, inviteUrl, userEmail);
+                console.log(`inviteParticipants: invite email sent to ${email}`);
+                return result;
             })
         );
 
