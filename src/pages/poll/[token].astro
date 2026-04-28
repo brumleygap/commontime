@@ -340,7 +340,7 @@ function cellColor(av: number | undefined): string {
           ))}
 
           <div class="vote-submit-row">
-            <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 20px;">
+            <button type="submit" class="ct-btn">
               {myParticipantId ? "Update my response" : "Save my response"}
             </button>
           </div>
@@ -396,7 +396,7 @@ function cellColor(av: number | undefined): string {
                       const av = voteMap.get(p.id)?.get(opt.id);
                       return (
                         <td class="avail-cell" style={cellBg(av)}>
-                          <span style={`color:${cellColor(av)};font-weight:${av === 1 ? 700 : 400};font-size:${av === undefined ? "12px" : "14px"};`}>
+                          <span style={`color:${cellColor(av)};font-weight:${av === 1 ? 700 : 400};font-size:${av === undefined ? "14px" : "17px"};`}>
                             {cellGlyph(av)}
                           </span>
                         </td>
@@ -505,7 +505,7 @@ function cellColor(av: number | undefined): string {
           </div>
 
           <div class="finalize-submit-row">
-            <button type="submit" class="ct-btn" style="font-size: 13px; padding: 10px 24px;">
+            <button type="submit" class="ct-btn">
               ★ Lock in this date
             </button>
           </div>
@@ -540,28 +540,28 @@ function cellColor(av: number | undefined): string {
 
   .poll-eyebrow {
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.2em;
+    font-size: 13px;
+    letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--red);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .poll-title {
     font-family: 'Playfair Display', serif;
-    font-size: clamp(24px, 5vw, 40px);
+    font-size: clamp(26px, 5vw, 40px);
     font-weight: 900;
     color: var(--white);
     line-height: 1.15;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
   .poll-desc {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 13px;
+    font-size: 16px;
     color: var(--on-dark);
-    margin-top: 4px;
+    margin-top: 6px;
   }
 
   /* ── Vote card ──────────────────────────────────────────────────────── */
@@ -578,7 +578,7 @@ function cellColor(av: number | undefined): string {
 
   .vote-card-title {
     font-family: 'Playfair Display', serif;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--ink);
   }
@@ -586,58 +586,58 @@ function cellColor(av: number | undefined): string {
   .vote-card-sub {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 12px;
+    font-size: 15px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   /* Banners */
   .success-banner {
-    padding: 12px 20px;
+    padding: 14px 20px;
     background: var(--green-light);
     border-left: 3px solid var(--green);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .success-banner strong {
     font-family: 'Playfair Display', serif;
-    font-size: 13px;
+    font-size: 17px;
     color: var(--green);
   }
 
   .success-banner span {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 11px;
+    font-size: 15px;
     color: var(--green);
   }
 
   .error-banner-inline {
-    padding: 12px 20px;
+    padding: 14px 20px;
     background: var(--busy-bg);
     border-left: 3px solid var(--red);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     font-family: 'Libre Baskerville', serif;
-    font-size: 13px;
+    font-size: 16px;
     color: var(--ink);
   }
 
   .welcome-banner {
-    padding: 12px 20px;
+    padding: 14px 20px;
     background: var(--maybe-bg);
     border-left: 3px solid var(--maybe);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .welcome-banner strong {
     font-family: 'Playfair Display', serif;
-    font-size: 13px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--maybe-text);
   }
@@ -645,7 +645,7 @@ function cellColor(av: number | undefined): string {
   .welcome-banner span {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 11px;
+    font-size: 15px;
     color: var(--maybe-mid);
   }
 
@@ -696,10 +696,10 @@ function cellColor(av: number | undefined): string {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    padding: 6px 0;
+    gap: 6px;
+    padding: 10px 0;
     border-right: 1px solid var(--staff);
-    font-size: 13px;
+    font-size: 16px;
   }
 
   .vibe-legend-item:last-child {
@@ -708,7 +708,7 @@ function cellColor(av: number | undefined): string {
 
   .vibe-legend-label {
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
+    font-size: 13px;
     font-weight: 500;
   }
 
@@ -718,7 +718,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .day-header {
-    padding: 5px 20px;
+    padding: 8px 16px;
     background: var(--day-bg);
     border-bottom: 1px solid var(--staff);
     display: flex;
@@ -728,14 +728,14 @@ function cellColor(av: number | undefined): string {
 
   .day-name {
     font-family: 'Playfair Display', serif;
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--ink);
   }
 
   .day-date {
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
+    font-size: 13px;
     color: var(--muted);
   }
 
@@ -824,7 +824,7 @@ function cellColor(av: number | undefined): string {
 
   .avail-title {
     font-family: 'Playfair Display', serif;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--ink);
     padding-bottom: 10px;
@@ -837,7 +837,7 @@ function cellColor(av: number | undefined): string {
   .avail-empty {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 14px;
+    font-size: 17px;
     color: var(--muted);
     margin-top: 16px;
   }
@@ -852,20 +852,20 @@ function cellColor(av: number | undefined): string {
   .avail-table {
     min-width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 15px;
   }
 
   .avail-name-hdr {
     background: var(--ink);
     color: var(--on-dark-dim);
     font-family: 'DM Mono', monospace;
-    font-size: 8px;
-    letter-spacing: 0.12em;
+    font-size: 12px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    padding: 10px 12px;
+    padding: 12px 14px;
     text-align: left;
     font-weight: 400;
-    min-width: 120px;
+    min-width: 130px;
     border-right: 1px solid rgba(255,255,255,0.06);
     vertical-align: middle;
   }
@@ -874,10 +874,10 @@ function cellColor(av: number | undefined): string {
     background: var(--ink);
     border-left: 1px solid rgba(255,255,255,0.06);
     border-top: 3px solid transparent;
-    padding: 10px 10px 8px;
+    padding: 12px 12px 10px;
     text-align: center;
     vertical-align: top;
-    min-width: 110px;
+    min-width: 120px;
     cursor: default;
   }
 
@@ -887,7 +887,7 @@ function cellColor(av: number | undefined): string {
 
   .avail-hdr-date {
     font-family: 'Playfair Display', serif;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--white);
     display: block;
@@ -896,18 +896,18 @@ function cellColor(av: number | undefined): string {
 
   .avail-hdr-time {
     font-family: 'DM Mono', monospace;
-    font-size: 8px;
+    font-size: 12px;
     color: var(--on-dark-dim);
     display: block;
-    margin-top: 1px;
+    margin-top: 3px;
   }
 
   .avail-hdr-count {
     font-family: 'DM Mono', monospace;
-    font-size: 10px;
+    font-size: 13px;
     color: var(--on-dark-dim);
     display: block;
-    margin-top: 3px;
+    margin-top: 4px;
     font-weight: 700;
   }
 
@@ -916,9 +916,9 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-name-cell {
-    padding: 9px 12px;
+    padding: 11px 14px;
     font-family: 'DM Mono', monospace;
-    font-size: 10px;
+    font-size: 13px;
     color: var(--ink);
     border-right: 1px solid var(--staff);
     border-top: 1px solid var(--staff);
@@ -926,7 +926,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-cell {
-    padding: 9px 10px;
+    padding: 11px 12px;
     text-align: center;
     border-right: 1px solid var(--staff);
     border-top: 1px solid var(--staff);
@@ -946,8 +946,8 @@ function cellColor(av: number | undefined): string {
 
   .pending-badge {
     font-family: 'DM Mono', monospace;
-    font-size: 8px;
-    letter-spacing: 0.08em;
+    font-size: 12px;
+    letter-spacing: 0.06em;
     color: var(--muted);
     font-style: italic;
     margin-left: 6px;
@@ -956,9 +956,9 @@ function cellColor(av: number | undefined): string {
   .grid-legend {
     display: flex;
     gap: 20px;
-    padding: 8px 2px;
+    padding: 10px 2px;
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
+    font-size: 13px;
     color: var(--muted);
     margin-top: 6px;
   }
@@ -993,26 +993,26 @@ function cellColor(av: number | undefined): string {
 
   .finalized-eyebrow {
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.2em;
+    font-size: 13px;
+    letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--green);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .finalized-date {
     font-family: 'Playfair Display', serif;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     color: var(--ink);
     line-height: 1.2;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .finalized-sub {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 12px;
+    font-size: 16px;
     color: var(--muted);
   }
 
@@ -1030,7 +1030,7 @@ function cellColor(av: number | undefined): string {
 
   .finalize-title {
     font-family: 'Playfair Display', serif;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--ink);
   }
@@ -1038,9 +1038,9 @@ function cellColor(av: number | undefined): string {
   .finalize-sub {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 12px;
+    font-size: 15px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   .finalize-form {
@@ -1087,17 +1087,18 @@ function cellColor(av: number | undefined): string {
 
   .finalize-option-date {
     font-family: 'Playfair Display', serif;
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--ink);
   }
 
   .finalize-option-votes {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.06em;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    flex-wrap: wrap;
   }
 
   .finalize-top-badge {
@@ -1126,7 +1127,7 @@ function cellColor(av: number | undefined): string {
 
   .invite-title {
     font-family: 'Playfair Display', serif;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--ink);
   }
@@ -1134,9 +1135,9 @@ function cellColor(av: number | undefined): string {
   .invite-sub {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
-    font-size: 12px;
+    font-size: 15px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   .invite-form {
@@ -1171,10 +1172,10 @@ function cellColor(av: number | undefined): string {
 
   .invite-hint {
     font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.04em;
+    font-size: 13px;
+    letter-spacing: 0.03em;
     color: var(--muted);
-    margin-top: 5px;
+    margin-top: 6px;
   }
 
   .invite-submit-row {
@@ -1186,12 +1187,13 @@ function cellColor(av: number | undefined): string {
 
   .invite-btn {
     font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.08em;
+    font-size: 14px;
+    letter-spacing: 0.06em;
     color: var(--ink);
     background: none;
     border: 1px solid var(--ink);
-    padding: 8px 18px;
+    padding: 11px 20px;
+    min-height: 44px;
     cursor: pointer;
     transition: background 0.12s, color 0.12s;
   }

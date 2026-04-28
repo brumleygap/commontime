@@ -5,24 +5,24 @@ const user = Astro.locals.user;
 <header style="background: var(--ink); border-bottom: 3px solid var(--red);">
   <div class="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
     <a href="/" class="flex items-center gap-2" style="text-decoration: none;">
-      <span style="font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 900; color: var(--white); line-height: 1;">𝄴</span>
-      <span style="font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--white); letter-spacing: 0.05em;">
+      <span style="font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 900; color: var(--white); line-height: 1;">𝄴</span>
+      <span style="font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700; color: var(--white); letter-spacing: 0.05em;">
         Common<span style="color: var(--red); font-style: italic;">Time</span>
       </span>
     </a>
 
-    <div style="font-family: 'DM Mono', monospace; font-size: 11px; color: var(--on-dark); text-align: right; line-height: 1.6;">
+    <div style="font-family: 'DM Mono', monospace; font-size: 13px; color: var(--on-dark); text-align: right; line-height: 1.5;">
       {user ? (
         <>
           <span class="hidden sm:block" style="opacity: 0.7;">{user.email}</span>
           <form method="POST" action="/auth/logout" style="display: inline;">
-            <button type="submit" style="color: var(--red); background: none; border: none; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.05em; padding: 6px 0; min-height: 44px; display: inline-flex; align-items: center;">
+            <button type="submit" style="color: var(--red); background: none; border: none; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 13px; letter-spacing: 0.05em; padding: 6px 0; min-height: 44px; display: inline-flex; align-items: center;">
               Log out
             </button>
           </form>
         </>
       ) : (
-        <a href="/login" style="color: var(--on-dark); text-decoration: underline; text-underline-offset: 2px; font-size: 11px; padding: 6px 0; min-height: 44px; display: inline-flex; align-items: center;">Log in</a>
+        <a href="/login" style="color: var(--on-dark); text-decoration: underline; text-underline-offset: 2px; font-size: 13px; padding: 6px 0; min-height: 44px; display: inline-flex; align-items: center;">Log in</a>
       )}
     </div>
   </div>

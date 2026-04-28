@@ -61,7 +61,7 @@ body {
   color: var(--white);
   font-family: 'Playfair Display', serif;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 18px;
   padding: 13px 28px;
   min-height: 44px;
   border: none;
@@ -90,8 +90,8 @@ body {
 /* Eyebrow label style */
 .ct-eyebrow {
   font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 14px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted);
 }
