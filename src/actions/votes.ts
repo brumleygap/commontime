@@ -46,9 +46,14 @@ export const submitVote = defineAction({
                     participantId = row.id;
                 }
             } else if (input.invite) {
-                // Invited via unique link: look up pre-created participant by edit_token
+                // Invited via unique link: must be the browser that originally claimed it
                 if (poll.chosen_option_id !== null) {
                     throw new ActionError({ code: "BAD_REQUEST", message: "This poll has been finalized." });
+                }
+
+                const hasCookie = !!context.cookies.get(`ct_inv_${input.invite}`)?.value;
+                if (!hasCookie) {
+                    throw new ActionError({ code: "FORBIDDEN", message: "This invite link has already been claimed." });
                 }
 
                 const invited = await db
@@ -57,16 +62,7 @@ export const submitVote = defineAction({
                     .first<{ id: number }>();
 
                 if (!invited) {
-                    throw new ActionError({ code: "BAD_REQUEST", message: "Invalid or expired invite link." });
-                }
-
-                const priorVotes = await db
-                    .prepare(`SELECT COUNT(*) AS cnt FROM votes WHERE participant_id = ?`)
-                    .bind(invited.id)
-                    .first<{ cnt: number }>();
-
-                if (priorVotes && priorVotes.cnt > 0) {
-                    throw new ActionError({ code: "BAD_REQUEST", message: "This invite link has already been used." });
+                    throw new ActionError({ code: "BAD_REQUEST", message: "Invalid invite link." });
                 }
 
                 participantId = invited.id;
