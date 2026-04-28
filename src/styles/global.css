@@ -31,10 +31,17 @@
   --winner:      #4ade80;   /* winner column accent */
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   font-family: 'Libre Baskerville', Georgia, serif;
   background: var(--cream);
   color: var(--ink);
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 /* Shared staff-lines decorative background */
