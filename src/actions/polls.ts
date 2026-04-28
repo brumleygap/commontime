@@ -125,7 +125,7 @@ export const lockPoll = defineAction({
         const pollUrl = `${origin}/poll/${input.token}`;
         const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
 
-        const recipients = (
+        const recipients: { email: string }[] = (
             await db
                 .prepare(`
                     SELECT COALESCE(u.email, pa.email) AS email
@@ -250,7 +250,7 @@ export const unlockPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients = (
+        const recipients: { email: string }[] = (
             await db
                 .prepare(`
                     SELECT COALESCE(u.email, pa.email) AS email
