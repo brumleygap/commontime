@@ -41,6 +41,33 @@ ${descHtml}<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayD
     }
 }
 
+export async function sendReopenEmail(
+    emailBinding: Fetcher,
+    to: string,
+    pollTitle: string,
+    pollUrl: string,
+) {
+    const response = await emailBinding.fetch("https://commontime-email-sender/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            to,
+            from: { email: "hello@commontime.app", name: "CommonTime" },
+            subject: `Voting re-opened: ${pollTitle}`,
+            text: `The organiser has re-opened voting for "${pollTitle}". Head back to the poll to update your availability.\n\n${pollUrl}`,
+            html: `<p>The organiser has re-opened voting for this poll.</p>
+<h2 style="font-family:Georgia,serif;margin:0 0 16px">${pollTitle}</h2>
+<p><a href="${pollUrl}" style="color:#c8102e;font-weight:bold">Update your availability →</a></p>
+<p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json() as { error?: string };
+        throw new Error(error?.error ?? `Email service returned ${response.status}`);
+    }
+}
+
 export async function sendPollInviteEmail(
     emailBinding: Fetcher,
     to: string,

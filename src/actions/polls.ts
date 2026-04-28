@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail } from "../lib/email";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -211,5 +211,55 @@ export const inviteParticipants = defineAction({
         );
 
         return { ok: true, count: unique.length };
+    },
+});
+
+export const unlockPoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to re-open a poll." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        await db
+            .prepare(`UPDATE polls SET chosen_option_id = NULL WHERE id = ?`)
+            .bind(poll.id)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+
+        const recipients = (
+            await db
+                .prepare(`
+                    SELECT COALESCE(u.email, pa.email) AS email
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        Promise.allSettled(
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+        ).catch(() => {});
+
+        return { ok: true };
     },
 });
