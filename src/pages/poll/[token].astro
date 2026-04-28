@@ -13,6 +13,9 @@ const voteSuccess = voteResult?.data?.ok === true;
 const lockResult = await Astro.getActionResult(actions.lockPoll);
 const lockError = lockResult?.error;
 
+const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
+const inviteError = inviteResult?.error;
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 const poll = await db
@@ -417,6 +420,52 @@ function cellColor(av: number | undefined): string {
         </div>
       )}
     </div>
+
+    <!-- ── Invite section (creator only, while open) ────────────────────── -->
+    {isCreator && isOpen && (
+      <div class="invite-card">
+        <div class="invite-card-head">
+          <h2 class="invite-title">Invite people</h2>
+          <p class="invite-sub">Send a direct link to this poll by email.</p>
+        </div>
+
+        {inviteResult?.data?.ok && (
+          <div class="success-banner">
+            <strong>Invites sent!</strong>
+            <span>
+              {inviteResult.data.count === 1
+                ? "1 person invited."
+                : `${inviteResult.data.count} people invited.`}
+            </span>
+          </div>
+        )}
+
+        {inviteError && (
+          <div class="error-banner-inline">
+            <strong>Couldn't send invites.</strong>
+            {inviteError.message && <span>{inviteError.message}</span>}
+          </div>
+        )}
+
+        <form method="POST" action={actions.inviteParticipants} class="invite-form">
+          <input type="hidden" name="token" value={token} />
+          <div class="invite-field">
+            <label for="invite-emails" class="field-label">Email addresses</label>
+            <textarea
+              id="invite-emails"
+              name="emails"
+              placeholder={"alice@example.com, bob@example.com"}
+              class="invite-textarea"
+              rows={3}
+            ></textarea>
+            <p class="invite-hint">Separate multiple addresses with commas or new lines. Up to 20 per send.</p>
+          </div>
+          <div class="invite-submit-row">
+            <button type="submit" class="invite-btn">♩ Send invites</button>
+          </div>
+        </form>
+      </div>
+    )}
 
     <!-- ── Finalize section (creator only, while open) ───────────────────── -->
     {isCreator && isOpen && (
@@ -1056,6 +1105,95 @@ function cellColor(av: number | undefined): string {
     justify-content: flex-end;
     border-top: 1px solid var(--staff);
     padding-top: 14px;
+  }
+
+  /* ── Invite card ────────────────────────────────────────────────────── */
+  .invite-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--ink);
+  }
+
+  .invite-card-head {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .invite-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .invite-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .invite-form {
+    padding: 16px 20px;
+  }
+
+  .invite-field {
+    margin-bottom: 12px;
+  }
+
+  .invite-textarea {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--ink);
+    padding: 6px 0;
+    outline: none;
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  .invite-textarea::placeholder {
+    color: var(--placeholder);
+  }
+
+  .invite-textarea:focus {
+    border-color: var(--red);
+  }
+
+  .invite-hint {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  .invite-submit-row {
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--staff);
+    padding-top: 14px;
+  }
+
+  .invite-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    background: none;
+    border: 1px solid var(--ink);
+    padding: 8px 18px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .invite-btn:hover {
+    background: var(--ink);
+    color: var(--cream);
   }
 </style>
 

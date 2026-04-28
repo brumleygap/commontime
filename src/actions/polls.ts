@@ -2,6 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
+import { sendPollInviteEmail } from "../lib/email";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -121,5 +122,54 @@ export const lockPoll = defineAction({
             .run();
 
         return { ok: true };
+    },
+});
+
+export const inviteParticipants = defineAction({
+    accept: "form",
+    input: z.object({
+        token: z.string(),
+        emails: z.string().min(1, "Enter at least one email address."),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to send invites." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const addresses = input.emails
+            .split(/[\s,;]+/)
+            .map((e) => e.trim().toLowerCase())
+            .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+        const unique = [...new Set(addresses)].slice(0, 20);
+
+        if (unique.length === 0) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "No valid email addresses found." });
+        }
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+
+        await Promise.all(
+            unique.map((email) =>
+                sendPollInviteEmail(env.EMAIL, email, poll.title, pollUrl, userEmail)
+            )
+        );
+
+        return { ok: true, count: unique.length };
     },
 });
