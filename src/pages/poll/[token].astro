@@ -88,6 +88,7 @@ const myVoteMap = new Map<number, number>(); // optionId → availability
 // Invite token from ?invite= query param
 const inviteToken = Astro.url.searchParams.get("invite") ?? null;
 let inviteEmail: string | null = null;
+let inviteHasVoted = false;
 
 if (currentUser) {
   const myParticipant = await db
@@ -120,6 +121,7 @@ if (currentUser) {
         .bind(inviteParticipant.id)
         .all<{ option_id: number; availability: number }>()
     ).results;
+    inviteHasVoted = myVotes.length > 0;
     for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
   }
 }
@@ -267,6 +269,11 @@ function cellColor(av: number | undefined): string {
           <p class="finalized-sub">This poll is closed. Thanks to everyone who responded.</p>
           <a href={`/poll/${poll.token}/calendar.ics`} class="finalized-cal-link">Add to calendar →</a>
         </div>
+      </div>
+    ) : inviteToken && inviteHasVoted ? (
+      <div class="invite-used-banner">
+        <p class="invite-used-title">You've already responded</p>
+        <p class="invite-used-sub">This invite link has been used. Your response is recorded — thanks!</p>
       </div>
     ) : (
       <div class="vote-card">
@@ -1066,6 +1073,28 @@ function cellColor(av: number | undefined): string {
   }
 
   .finalized-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--muted);
+  }
+
+  .invite-used-banner {
+    background: var(--maybe-bg);
+    border: 1px solid var(--maybe);
+    border-left: 4px solid var(--maybe);
+    padding: 20px 24px;
+  }
+
+  .invite-used-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+
+  .invite-used-sub {
     font-family: 'Libre Baskerville', serif;
     font-style: italic;
     font-size: 16px;

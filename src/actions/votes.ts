@@ -11,9 +11,9 @@ export const submitVote = defineAction({
 
         try {
             const poll = await db
-                .prepare(`SELECT id FROM polls WHERE token = ?`)
+                .prepare(`SELECT id, chosen_option_id FROM polls WHERE token = ?`)
                 .bind(input.token)
-                .first<{ id: number }>();
+                .first<{ id: number; chosen_option_id: number | null }>();
 
             if (!poll) {
                 throw new ActionError({ code: "BAD_REQUEST", message: "Unknown poll token." });
@@ -47,6 +47,10 @@ export const submitVote = defineAction({
                 }
             } else if (input.invite) {
                 // Invited via unique link: look up pre-created participant by edit_token
+                if (poll.chosen_option_id !== null) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "This poll has been finalized." });
+                }
+
                 const invited = await db
                     .prepare(`SELECT id FROM participants WHERE edit_token = ? AND poll_id = ?`)
                     .bind(input.invite, pollId)
@@ -54,6 +58,15 @@ export const submitVote = defineAction({
 
                 if (!invited) {
                     throw new ActionError({ code: "BAD_REQUEST", message: "Invalid or expired invite link." });
+                }
+
+                const priorVotes = await db
+                    .prepare(`SELECT COUNT(*) AS cnt FROM votes WHERE participant_id = ?`)
+                    .bind(invited.id)
+                    .first<{ cnt: number }>();
+
+                if (priorVotes && priorVotes.cnt > 0) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "This invite link has already been used." });
                 }
 
                 participantId = invited.id;
