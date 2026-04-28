@@ -11,9 +11,9 @@ export const submitVote = defineAction({
 
         try {
             const poll = await db
-                .prepare(`SELECT id FROM polls WHERE token = ?`)
+                .prepare(`SELECT id, chosen_option_id FROM polls WHERE token = ?`)
                 .bind(input.token)
-                .first<{ id: number }>();
+                .first<{ id: number; chosen_option_id: number | null }>();
 
             if (!poll) {
                 throw new ActionError({ code: "BAD_REQUEST", message: "Unknown poll token." });
@@ -25,34 +25,78 @@ export const submitVote = defineAction({
 
             let participantId: number;
 
-            // Logged-in users get their existing response updated (upsert).
-            const existing = userId
-                ? await db
+            if (userId) {
+                // Logged-in user: upsert by user_id
+                const existing = await db
                     .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
                     .bind(pollId, userId)
-                    .first<{ id: number }>()
-                : null;
-
-            if (existing) {
-                participantId = existing.id;
-                await db
-                    .prepare(`UPDATE participants SET name = ? WHERE id = ?`)
-                    .bind(name, participantId)
-                    .run();
-                await db
-                    .prepare(`DELETE FROM votes WHERE participant_id = ?`)
-                    .bind(participantId)
-                    .run();
-            } else {
-                const editToken = crypto.randomUUID().replace(/-/g, "");
-                const row = await db
-                    .prepare(
-                        `INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`
-                    )
-                    .bind(pollId, name, editToken, userId)
                     .first<{ id: number }>();
-                if (!row) throw new Error("Failed to insert participant.");
-                participantId = row.id;
+
+                if (existing) {
+                    participantId = existing.id;
+                    await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
+                    await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
+                } else {
+                    const editToken = crypto.randomUUID().replace(/-/g, "");
+                    const row = await db
+                        .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`)
+                        .bind(pollId, name, editToken, userId)
+                        .first<{ id: number }>();
+                    if (!row) throw new Error("Failed to insert participant.");
+                    participantId = row.id;
+                }
+            } else if (input.invite) {
+                // Invited via unique link: must be the browser that originally claimed it
+                if (poll.chosen_option_id !== null) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "This poll has been finalized." });
+                }
+
+                const hasCookie = !!context.cookies.get(`ct_inv_${input.invite}`)?.value;
+                if (!hasCookie) {
+                    throw new ActionError({ code: "FORBIDDEN", message: "This invite link has already been claimed." });
+                }
+
+                const invited = await db
+                    .prepare(`SELECT id FROM participants WHERE edit_token = ? AND poll_id = ?`)
+                    .bind(input.invite, pollId)
+                    .first<{ id: number }>();
+
+                if (!invited) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "Invalid invite link." });
+                }
+
+                participantId = invited.id;
+                await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
+                await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
+            } else {
+                // Anonymous visitor: email is required
+                if (!input.email) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "An email address is required." });
+                }
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+                    throw new ActionError({ code: "BAD_REQUEST", message: "Please enter a valid email address." });
+                }
+
+                // Upsert by email — handles cross-device returns (e.g. opened invite on phone,
+                // voting on laptop) without creating a duplicate participant row.
+                const existing = await db
+                    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND email = ?`)
+                    .bind(pollId, input.email)
+                    .first<{ id: number }>();
+
+                if (existing) {
+                    participantId = existing.id;
+                    await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
+                    await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
+                } else {
+                    const editToken = crypto.randomUUID().replace(/-/g, "");
+                    const row = await db
+                        .prepare(`INSERT INTO participants (poll_id, name, edit_token, email) VALUES (?, ?, ?, ?) RETURNING id`)
+                        .bind(pollId, name, editToken, input.email)
+                        .first<{ id: number }>();
+                    if (!row) throw new Error("Failed to insert participant.");
+                    participantId = row.id;
+                }
             }
 
             // Store ALL vote states (including busy=0), so we know who has responded.

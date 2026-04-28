@@ -13,6 +13,9 @@ const voteSuccess = voteResult?.data?.ok === true;
 const lockResult = await Astro.getActionResult(actions.lockPoll);
 const lockError = lockResult?.error;
 
+const unlockResult = await Astro.getActionResult(actions.unlockPoll);
+const unlockError = unlockResult?.error;
+
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
 
@@ -85,6 +88,10 @@ const currentUser = Astro.locals.user ?? null;
 let myParticipantId: number | null = null;
 const myVoteMap = new Map<number, number>(); // optionId → availability
 
+// Invite token from ?invite= query param. Use let — may be nulled out if forwarded.
+let inviteToken = Astro.url.searchParams.get("invite") ?? null;
+let inviteEmail: string | null = null;
+
 if (currentUser) {
   const myParticipant = await db
     .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
@@ -100,6 +107,47 @@ if (currentUser) {
         .all<{ option_id: number; availability: number }>()
     ).results;
     for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
+  }
+} else if (inviteToken) {
+  const inviteParticipant = await db
+    .prepare(`SELECT id, email, claimed_at FROM participants WHERE edit_token = ? AND poll_id = ?`)
+    .bind(inviteToken, poll.id)
+    .first<{ id: number; email: string | null; claimed_at: string | null }>();
+
+  if (inviteParticipant) {
+    const cookieName = `ct_inv_${inviteToken}`;
+    const hasCookie = !!Astro.cookies.get(cookieName)?.value;
+
+    if (!inviteParticipant.claimed_at) {
+      // First visit — claim the invite and set a cookie so this browser can return
+      await db
+        .prepare(`UPDATE participants SET claimed_at = datetime('now') WHERE id = ?`)
+        .bind(inviteParticipant.id)
+        .run();
+      Astro.cookies.set(cookieName, "1", {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+        sameSite: "lax",
+        secure: true,
+        httpOnly: true,
+      });
+      myParticipantId = inviteParticipant.id;
+      inviteEmail = inviteParticipant.email;
+    } else if (hasCookie) {
+      // Returning invitee — same browser that claimed it
+      myParticipantId = inviteParticipant.id;
+      inviteEmail = inviteParticipant.email;
+      const myVotes = (
+        await db
+          .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
+          .bind(inviteParticipant.id)
+          .all<{ option_id: number; availability: number }>()
+      ).results;
+      for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
+    } else {
+      // Forwarded link — already claimed by a different browser; treat as anonymous
+      inviteToken = null;
+    }
   }
 }
 
@@ -240,10 +288,24 @@ function cellColor(av: number | undefined): string {
     {!isOpen ? (
       <div class="finalized-banner">
         <div class="finalized-banner-icon" aria-hidden="true">★</div>
-        <div>
+        <div style="flex:1">
           <p class="finalized-eyebrow">Date confirmed</p>
           <p class="finalized-date">{chosenOption ? fmtFull(chosenOption.option_datetime) : ""}</p>
           <p class="finalized-sub">This poll is closed. Thanks to everyone who responded.</p>
+          <a href={`/poll/${poll.token}/calendar.ics`} class="finalized-cal-link">Add to calendar →</a>
+
+          {isCreator && (
+            <div class="reopen-section">
+              {unlockError && (
+                <p class="reopen-error">{unlockError.message}</p>
+              )}
+              <p class="reopen-warning">Finalization emails have already been sent. Re-opening will notify everyone that voting is back on.</p>
+              <form method="POST" action={actions.unlockPoll}>
+                <input type="hidden" name="token" value={token} />
+                <button type="submit" class="reopen-btn">Re-open for voting</button>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     ) : (
@@ -279,6 +341,29 @@ function cellColor(av: number | undefined): string {
         <form method="POST" action={actions.submitVote} id="vote-form">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="voteData" id="vote-data" />
+          {inviteToken && <input type="hidden" name="invite" value={inviteToken} />}
+
+          <!-- Email row: read-only for invite, required for anonymous, hidden for logged-in -->
+          {!currentUser && inviteEmail && (
+            <div class="name-row">
+              <label class="field-label">Your email</label>
+              <p class="invite-email-display">{inviteEmail}</p>
+            </div>
+          )}
+          {!currentUser && !inviteToken && (
+            <div class="name-row">
+              <label for="voter-email" class="field-label">Your email <span class="required-star">*</span></label>
+              <input
+                id="voter-email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                required
+                placeholder="you@example.com"
+                class="name-input"
+              />
+            </div>
+          )}
 
           <!-- Name row -->
           <div class="name-row">
@@ -677,6 +762,17 @@ function cellColor(av: number | undefined): string {
     outline: none;
   }
 
+  .invite-email-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    color: var(--ink);
+    padding: 6px 0 8px;
+  }
+
+  .required-star {
+    color: var(--red);
+  }
+
   .name-input::placeholder {
     color: var(--placeholder);
   }
@@ -1014,6 +1110,56 @@ function cellColor(av: number | undefined): string {
     font-style: italic;
     font-size: 16px;
     color: var(--muted);
+  }
+
+  .reopen-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(26, 107, 58, 0.25);
+  }
+
+  .reopen-warning {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .reopen-error {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+
+  .reopen-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--staff);
+    padding: 8px 16px;
+    min-height: 36px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+
+  .reopen-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .finalized-cal-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--green);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   /* ── Finalize card ──────────────────────────────────────────────────── */

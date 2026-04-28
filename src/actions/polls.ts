@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail } from "../lib/email";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -99,18 +99,18 @@ export const lockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description, timezone FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number }>();
+            .first<{ id: number; title: string; description: string | null; timezone: string }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
         const option = await db
-            .prepare(`SELECT id FROM poll_options WHERE id = ? AND poll_id = ?`)
+            .prepare(`SELECT id, option_datetime FROM poll_options WHERE id = ? AND poll_id = ?`)
             .bind(input.optionId, poll.id)
-            .first<{ id: number }>();
+            .first<{ id: number; option_datetime: string }>();
 
         if (!option) {
             throw new ActionError({ code: "BAD_REQUEST", message: "Invalid option." });
@@ -120,6 +120,35 @@ export const lockPoll = defineAction({
             .prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
             .bind(input.optionId, poll.id)
             .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+        const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
+
+        const recipients: { email: string }[] = (
+            await db
+                .prepare(`
+                    SELECT COALESCE(u.email, pa.email) AS email
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
+        const sendResults = await Promise.allSettled(
+            recipients.map((r: { email: string }) =>
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
+            )
+        );
+        sendResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`lockPoll: failed to send finalization email to ${recipients[i].email}:`, r.reason);
+            }
+        });
 
         return { ok: true };
     },
@@ -164,12 +193,91 @@ export const inviteParticipants = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
+        console.log(`inviteParticipants: sending invites for poll ${poll.id} to:`, unique);
         await Promise.all(
-            unique.map((email) =>
-                sendPollInviteEmail(env.EMAIL, email, poll.title, pollUrl, userEmail)
-            )
+            unique.map(async (email) => {
+                // Find or create a participant row for this invitee so we can send a unique link
+                const existing = await db
+                    .prepare(`SELECT edit_token FROM participants WHERE poll_id = ? AND email = ?`)
+                    .bind(poll.id, email)
+                    .first<{ edit_token: string }>();
+
+                const editToken = existing?.edit_token ?? crypto.randomUUID().replace(/-/g, "");
+
+                if (!existing) {
+                    await db
+                        .prepare(`INSERT INTO participants (poll_id, email, edit_token) VALUES (?, ?, ?)`)
+                        .bind(poll.id, email, editToken)
+                        .run();
+                    console.log(`inviteParticipants: created participant row for ${email}`);
+                } else {
+                    console.log(`inviteParticipants: reusing existing participant row for ${email}`);
+                }
+
+                const inviteUrl = `${pollUrl}?invite=${editToken}`;
+                console.log(`inviteParticipants: sending invite email to ${email}`);
+                const result = await sendPollInviteEmail(env.EMAIL, email, poll.title, inviteUrl, userEmail);
+                console.log(`inviteParticipants: invite email sent to ${email}`);
+                return result;
+            })
         );
 
         return { ok: true, count: unique.length };
+    },
+});
+
+export const unlockPoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to re-open a poll." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        await db
+            .prepare(`UPDATE polls SET chosen_option_id = NULL WHERE id = ?`)
+            .bind(poll.id)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+
+        const recipients: { email: string }[] = (
+            await db
+                .prepare(`
+                    SELECT COALESCE(u.email, pa.email) AS email
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
+        const reopenResults = await Promise.allSettled(
+            recipients.map((r: { email: string }) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+        );
+        reopenResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`unlockPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
+            }
+        });
+
+        return { ok: true };
     },
 });
