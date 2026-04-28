@@ -7,9 +7,11 @@
 // in by the adapter, so it's already present in the generated config.
 //
 // Set DEPLOY_ENV=preview to target the preview worker + database.
+// Set PR_NUMBER to get a per-PR worker name (commontime-pr-<n>).
 import { readFileSync, writeFileSync } from "fs";
 
 const env = process.env.DEPLOY_ENV ?? "production";
+const prNumber = process.env.PR_NUMBER;
 const configPath = "dist/server/wrangler.json";
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 
@@ -18,7 +20,7 @@ delete config.images;
 delete config.previews;
 
 if (env === "preview") {
-  config.name = "commontime-preview";
+  config.name = prNumber ? `commontime-pr-${prNumber}` : "commontime-preview";
   config.d1_databases = [
     {
       binding: "DB",

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   typecheck:
@@ -22,7 +23,7 @@ jobs:
   migrate-preview:
     runs-on: ubuntu-latest
     needs: typecheck
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,7 +39,7 @@ jobs:
   deploy-preview:
     runs-on: ubuntu-latest
     needs: [typecheck, migrate-preview]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,11 +48,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: DEPLOY_ENV=preview node scripts/patch-deploy-config.mjs
+      - run: DEPLOY_ENV=preview PR_NUMBER=${{ github.event.pull_request.number }} node scripts/patch-deploy-config.mjs
       - run: npx wrangler deploy --config dist/server/wrangler.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Post preview URL
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.${{ secrets.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}.workers.dev" \
+            --edit-last || \
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.${{ secrets.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}.workers.dev"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   # Production environment — runs on push to main
   migrate-production:
@@ -84,6 +94,20 @@ jobs:
       - run: npm run build
       - run: node scripts/patch-deploy-config.mjs
       - run: npx wrangler deploy --config dist/server/wrangler.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # Delete the per-PR Worker when the PR is closed or merged
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g wrangler
+      - run: npx wrangler delete --name commontime-pr-${{ github.event.pull_request.number }} --force
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
