@@ -1,52 +1,333 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { env } from "cloudflare:workers";
+
+const user = Astro.locals.user ?? null;
+
+type PollRow = {
+  token: string;
+  title: string;
+  created_at: string;
+  is_creator: number; // 1 | 0
+  participant_count: number;
+  responded_count: number;
+  earliest_option: string | null;
+};
+
+let myPolls: PollRow[] = [];
+let guestPolls: PollRow[] = [];
+
+if (user) {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT
+         p.token, p.title, p.created_at,
+         (p.creator_id = ?) AS is_creator,
+         (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
+         (SELECT COUNT(DISTINCT par.id)
+          FROM participants par
+          WHERE par.poll_id = p.id
+            AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
+         (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+       FROM polls p
+       WHERE p.creator_id = ?
+          OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?)
+       ORDER BY p.created_at DESC
+       LIMIT 20`
+    )
+    .bind(user.id, user.id, user.id)
+    .all<PollRow>();
+  myPolls = results;
+} else {
+  const guestCookie = Astro.cookies.get("recent_polls")?.value ?? "";
+  const guestTokens = guestCookie ? guestCookie.split(",").filter(Boolean) : [];
+  if (guestTokens.length > 0) {
+    const placeholders = guestTokens.map(() => "?").join(",");
+    const { results } = await env.DB
+      .prepare(
+        `SELECT
+           p.token, p.title, p.created_at,
+           0 AS is_creator,
+           (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
+           (SELECT COUNT(DISTINCT par.id)
+            FROM participants par
+            WHERE par.poll_id = p.id
+              AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
+           (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+         FROM polls p
+         WHERE p.token IN (${placeholders})
+         ORDER BY p.created_at DESC`
+      )
+      .bind(...guestTokens)
+      .all<PollRow>();
+    guestPolls = results;
+  }
+}
+
+function fmtEarliest(dt: string | null) {
+  if (!dt) return null;
+  return new Date(dt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 ---
 
 <BaseLayout title="CommonTime">
-  <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
-    <!-- Staff lines bg -->
-    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
-
-    <!-- Time-signature watermark -->
-    <div class="time-sig" aria-hidden="true">4<br />4</div>
-
-    <div class="relative z-10 mx-auto max-w-2xl px-6 py-24 text-center flex flex-col items-center">
-      <!-- 𝄴 watermark -->
-      <div class="ct-watermark" aria-hidden="true">𝄴</div>
-
-      <p class="ct-eyebrow mb-5">Schedule together</p>
-
-      <h1 class="hero-headline">
-        Find a time that<br /><em>works.</em>
-      </h1>
-
-      <p class="hero-sub">
-        Pick dates. Share a link. See what works — all in common time.
-      </p>
-
-      <a href="/create" class="ct-btn" style="margin-bottom: 64px;">
-        ♩ Create a Poll
-      </a>
-
-      <div class="note-row">
-        <div class="note-item">
-          <span class="note-glyph">♩</span>
-          <span class="ct-eyebrow">Pick dates</span>
+  {user ? (
+    <!-- ── Logged-in: poll dashboard ───────────────────────────── -->
+    <div class="mx-auto max-w-2xl px-6 py-10">
+      <div class="dash-header">
+        <div>
+          <p class="ct-eyebrow" style="margin-bottom: 2px;">Your polls</p>
+          <p class="dash-sub">Polls you've created or responded to</p>
         </div>
-        <div class="note-item">
-          <span class="note-glyph">♪</span>
-          <span class="ct-eyebrow">Share link</span>
+        <a href="/create" class="new-poll-btn">♩ New poll</a>
+      </div>
+
+      {myPolls.length === 0 ? (
+        <div class="empty-state">
+          <span class="empty-glyph" aria-hidden="true">𝄴</span>
+          <p class="empty-msg">No polls yet.</p>
+          <a href="/create" class="ct-btn">♩ Create your first poll</a>
         </div>
-        <div class="note-item">
-          <span class="note-glyph">♫</span>
-          <span class="ct-eyebrow">Find time</span>
+      ) : (
+        <div class="poll-list">
+          {myPolls.map((poll) => (
+            <a href={`/poll/${poll.token}`} class={`poll-row${poll.is_creator ? " creator" : ""}`}>
+              <div class="poll-row-body">
+                <span class="poll-row-title">{poll.title}</span>
+                <div class="poll-row-meta">
+                  {poll.is_creator ? <span class="badge">yours</span> : null}
+                  <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                  {poll.earliest_option && (
+                    <span>from {fmtEarliest(poll.earliest_option)}</span>
+                  )}
+                </div>
+              </div>
+              <span class="poll-row-arrow" aria-hidden="true">→</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : guestPolls.length > 0 ? (
+    <!-- ── Guest: polls they've participated in ───────────────── -->
+    <div class="mx-auto max-w-2xl px-6 py-10">
+      <div class="dash-header">
+        <div>
+          <p class="ct-eyebrow" style="margin-bottom: 2px;">Your polls</p>
+          <p class="dash-sub">Polls you've been invited to</p>
         </div>
       </div>
+
+      <div class="poll-list">
+        {guestPolls.map((poll) => (
+          <a href={`/poll/${poll.token}`} class="poll-row">
+            <div class="poll-row-body">
+              <span class="poll-row-title">{poll.title}</span>
+              <div class="poll-row-meta">
+                <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                {poll.earliest_option && (
+                  <span>from {fmtEarliest(poll.earliest_option)}</span>
+                )}
+              </div>
+            </div>
+            <span class="poll-row-arrow" aria-hidden="true">→</span>
+          </a>
+        ))}
+      </div>
+
+      <p class="guest-login-nudge">
+        Want to create your own polls? <a href="/login">Log in →</a>
+      </p>
     </div>
-  </section>
+  ) : (
+    <!-- ── Logged-out new visitor: marketing hero ─────────────── -->
+    <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
+      <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
+      <div class="time-sig" aria-hidden="true">4<br />4</div>
+
+      <div class="relative z-10 mx-auto max-w-2xl px-6 py-24 text-center flex flex-col items-center">
+        <div class="ct-watermark" aria-hidden="true">𝄴</div>
+        <p class="ct-eyebrow mb-5">Schedule together</p>
+        <h1 class="hero-headline">
+          Find a time that<br /><em>works.</em>
+        </h1>
+        <p class="hero-sub">
+          Pick dates. Share a link. See what works — all in common time.
+        </p>
+        <a href="/create" class="ct-btn" style="margin-bottom: 64px;">
+          ♩ Create a Poll
+        </a>
+        <div class="note-row">
+          <div class="note-item">
+            <span class="note-glyph">♩</span>
+            <span class="ct-eyebrow">Pick dates</span>
+          </div>
+          <div class="note-item">
+            <span class="note-glyph">♪</span>
+            <span class="ct-eyebrow">Share link</span>
+          </div>
+          <div class="note-item">
+            <span class="note-glyph">♫</span>
+            <span class="ct-eyebrow">Find time</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )}
 </BaseLayout>
 
 <style>
+  /* ── Dashboard ───────────────────────────────────────────── */
+  .dash-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .dash-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .new-poll-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--ink);
+    padding: 7px 14px;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+    flex-shrink: 0;
+  }
+
+  .new-poll-btn:hover {
+    background: var(--ink);
+    color: var(--cream);
+  }
+
+  /* ── Poll list ───────────────────────────────────────────── */
+  .poll-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--staff);
+  }
+
+  .poll-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    text-decoration: none;
+    color: inherit;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--staff);
+    background: var(--white);
+    transition: background 0.1s;
+  }
+
+  .poll-row:last-child {
+    border-bottom: none;
+  }
+
+  .poll-row.creator {
+    border-left-color: var(--red);
+  }
+
+  .poll-row:hover {
+    background: var(--day-bg);
+  }
+
+  .poll-row-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .poll-row-title {
+    display: block;
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+
+  .poll-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--red);
+    border: 1px solid var(--red);
+    padding: 1px 5px;
+  }
+
+  .poll-row-arrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--staff);
+    flex-shrink: 0;
+    transition: color 0.1s, transform 0.1s;
+  }
+
+  .poll-row:hover .poll-row-arrow {
+    color: var(--ink);
+    transform: translateX(2px);
+  }
+
+  /* ── Empty state ─────────────────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 60px 24px;
+    text-align: center;
+    border: 1px solid var(--staff);
+    background: var(--white);
+  }
+
+  .empty-glyph {
+    font-family: 'Playfair Display', serif;
+    font-size: 64px;
+    font-weight: 900;
+    color: var(--ink);
+    opacity: 0.08;
+    line-height: 1;
+  }
+
+  .empty-msg {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    color: var(--muted);
+    font-size: 14px;
+    margin-top: -8px;
+  }
+
+  /* ── Hero (logged-out) ───────────────────────────────────── */
   .time-sig {
     position: absolute;
     right: 6%;
@@ -121,5 +402,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     opacity: 0.2;
     color: var(--ink);
     line-height: 1;
+  }
+
+  /* ── Guest login nudge ───────────────────────────────────── */
+  .guest-login-nudge {
+    margin-top: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .guest-login-nudge a {
+    color: var(--ink);
+    text-underline-offset: 2px;
   }
 </style>

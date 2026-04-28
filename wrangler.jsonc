@@ -30,5 +30,23 @@
       "database_name": "commontime-db",
       "database_id": "63783172-f60e-4f0a-802b-452fb83ccb9b"
     }
-  ]
+  ],
+  "env": {
+    "preview": {
+      "name": "commontime-preview",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "commontime-db-preview",
+          "database_id": "8b67ab75-2c6d-47b3-a5c9-23b28e7b850d"
+        }
+      ],
+      "services": [
+        {
+          "binding": "EMAIL",
+          "service": "commontime-email-sender"
+        }
+      ]
+    }
+  }
 }

@@ -10,17 +10,31 @@ npm run build     # build to ./dist/ for Cloudflare Workers
 
 There is no test suite or lint script. All testing is done on Cloudflare preview deployments — never locally.
 
+## Environments
+
+Two deployed environments:
+
+| Environment | Worker | D1 Database | When deployed |
+|---|---|---|---|
+| **production** | `commontime` | `commontime-db` | push to `main` |
+| **preview** | `commontime-preview` | `commontime-db-preview` | any PR targeting `main` |
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to `main`:
-- **typecheck** — `tsc --noEmit`
-- **migrate** — `wrangler d1 migrations apply commontime-db --remote` (targets the real Cloudflare D1, never a local SQLite)
+- **typecheck** — `tsc --noEmit` (always)
+- **migrate + deploy preview** — on pull requests; targets `commontime-db-preview` and `commontime-preview` worker
+- **migrate + deploy production** — on push to `main`; targets `commontime-db` and `commontime` worker
 
 Requires two GitHub Actions secrets: `CLOUDFLARE_API_TOKEN` (D1 + Workers Edit) and `CLOUDFLARE_ACCOUNT_ID`.
 
-If a migration must be applied manually (e.g. first-time setup or CI failure):
+If a migration must be applied manually:
 ```bash
+# Production
 npx wrangler d1 migrations apply commontime-db --remote
+
+# Preview
+npx wrangler d1 migrations apply commontime-db-preview --remote -e preview
 ```
 
 Always use `--remote`. There is no local database.

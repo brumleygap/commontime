@@ -63,6 +63,19 @@ export const submitVote = defineAction({
                 await voteStmt.bind(participantId, v.optionId, v.availability).run();
             }
 
+            // Ensure the poll appears in recent_polls after voting (the poll page sets this
+            // on first visit, but keep it fresh here in case the cookie expired).
+            const prev = context.cookies.get("recent_polls")?.value ?? "";
+            const tokens = prev ? prev.split(",").filter(Boolean) : [];
+            if (!tokens.includes(input.token)) tokens.unshift(input.token);
+            context.cookies.set("recent_polls", tokens.slice(0, 10).join(","), {
+                path: "/",
+                maxAge: 60 * 60 * 24 * 90,
+                sameSite: "lax",
+                secure: true,
+                httpOnly: true,
+            });
+
             return { ok: true };
         } catch (err: any) {
             if (err instanceof ActionError) throw err;

@@ -30,6 +30,18 @@ const poll = await db
 
 if (!poll) return new Response("Poll not found", { status: 404 });
 
+// Track this poll in the browser so the home page can surface it,
+// even if the visitor has never voted (e.g. they were invited and haven't responded yet).
+const prevTokens = (Astro.cookies.get("recent_polls")?.value ?? "").split(",").filter(Boolean);
+if (!prevTokens.includes(poll.token)) prevTokens.unshift(poll.token);
+Astro.cookies.set("recent_polls", prevTokens.slice(0, 10).join(","), {
+  path: "/",
+  maxAge: 60 * 60 * 24 * 90,
+  sameSite: "lax",
+  secure: true,
+  httpOnly: true,
+});
+
 const options = (
   await db
     .prepare(
