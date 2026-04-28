@@ -6,40 +6,32 @@ import { env } from "cloudflare:workers";
 const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/poll/", "/create"];
 
 export const onRequest = defineMiddleware(async (context, next) => {
-    try {
-        const sessionToken = context.cookies.get("session")?.value;
+    const sessionToken = context.cookies.get("session")?.value;
 
-        if (sessionToken) {
-            const now = new Date().toISOString();
+    if (sessionToken) {
+        const now = new Date().toISOString();
 
-            const row = await env.DB
-                .prepare(
-                    `SELECT s.user_id, u.email
-                     FROM sessions s
-                     JOIN users u ON u.id = s.user_id
-                     WHERE s.token = ? AND s.expires_at > ?`
-                )
-                .bind(sessionToken, now)
-                .first<{ user_id: number; email: string }>();
+        const row = await env.DB
+            .prepare(
+                `SELECT s.user_id, u.email
+                 FROM sessions s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.token = ? AND s.expires_at > ?`
+            )
+            .bind(sessionToken, now)
+            .first<{ user_id: number; email: string }>();
 
-            if (row) {
-                context.locals.user = { id: row.user_id, email: row.email };
-            }
+        if (row) {
+            context.locals.user = { id: row.user_id, email: row.email };
         }
-
-        const { pathname } = context.url;
-        const isPublic = pathname === "/" || PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
-
-        if (!context.locals.user && !isPublic) {
-            return context.redirect("/login");
-        }
-
-        return next();
-    } catch (err: any) {
-        const message = err?.stack ?? err?.message ?? String(err);
-        return new Response(
-            `<pre style="font-family:monospace;padding:2rem;white-space:pre-wrap">MIDDLEWARE ERROR:\n\n${message}</pre>`,
-            { status: 500, headers: { "Content-Type": "text/html" } }
-        );
     }
+
+    const { pathname } = context.url;
+    const isPublic = pathname === "/" || PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
+
+    if (!context.locals.user && !isPublic) {
+        return context.redirect("/login");
+    }
+
+    return next();
 });
