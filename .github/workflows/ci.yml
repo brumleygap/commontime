@@ -40,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [typecheck, migrate-preview]
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,10 +58,10 @@ jobs:
       - name: Post preview URL
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.${{ secrets.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}.workers.dev" \
+            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.ernie-braganza.workers.dev" \
             --edit-last || \
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.${{ secrets.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}.workers.dev"
+            --body "Preview: https://commontime-pr-${{ github.event.pull_request.number }}.ernie-braganza.workers.dev"
         env:
           GH_TOKEN: ${{ github.token }}
 
