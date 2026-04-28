@@ -3,6 +3,16 @@ import { z } from "zod";
 export const SubmitVoteSchema = z.object({
     token: z.string().min(1),
 
+    // Invite token (edit_token of a pre-created participant row)
+    invite: z.string().optional(),
+
+    // Email for anonymous voters who weren't invited
+    email: z
+        .union([z.string(), z.null()])
+        .transform((v) => (typeof v === "string" ? v.trim().toLowerCase() : ""))
+        .transform((v) => (v.length ? v : undefined))
+        .optional(),
+
     name: z
         .union([z.string(), z.null()])
         .transform((v) => (typeof v === "string" ? v.trim() : ""))

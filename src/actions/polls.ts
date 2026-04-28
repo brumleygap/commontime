@@ -128,10 +128,11 @@ export const lockPoll = defineAction({
         const recipients = (
             await db
                 .prepare(`
-                    SELECT u.email
+                    SELECT COALESCE(u.email, pa.email) AS email
                     FROM participants pa
-                    JOIN users u ON u.id = pa.user_id
+                    LEFT JOIN users u ON u.id = pa.user_id
                     WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
                 `)
                 .bind(poll.id)
                 .all<{ email: string }>()
@@ -188,9 +189,25 @@ export const inviteParticipants = defineAction({
         const pollUrl = `${origin}/poll/${input.token}`;
 
         await Promise.all(
-            unique.map((email) =>
-                sendPollInviteEmail(env.EMAIL, email, poll.title, pollUrl, userEmail)
-            )
+            unique.map(async (email) => {
+                // Find or create a participant row for this invitee so we can send a unique link
+                const existing = await db
+                    .prepare(`SELECT edit_token FROM participants WHERE poll_id = ? AND email = ?`)
+                    .bind(poll.id, email)
+                    .first<{ edit_token: string }>();
+
+                const editToken = existing?.edit_token ?? crypto.randomUUID().replace(/-/g, "");
+
+                if (!existing) {
+                    await db
+                        .prepare(`INSERT INTO participants (poll_id, email, edit_token) VALUES (?, ?, ?)`)
+                        .bind(poll.id, email, editToken)
+                        .run();
+                }
+
+                const inviteUrl = `${pollUrl}?invite=${editToken}`;
+                return sendPollInviteEmail(env.EMAIL, email, poll.title, inviteUrl, userEmail);
+            })
         );
 
         return { ok: true, count: unique.length };

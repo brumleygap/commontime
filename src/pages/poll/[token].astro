@@ -85,6 +85,10 @@ const currentUser = Astro.locals.user ?? null;
 let myParticipantId: number | null = null;
 const myVoteMap = new Map<number, number>(); // optionId → availability
 
+// Invite token from ?invite= query param
+const inviteToken = Astro.url.searchParams.get("invite") ?? null;
+let inviteEmail: string | null = null;
+
 if (currentUser) {
   const myParticipant = await db
     .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
@@ -97,6 +101,23 @@ if (currentUser) {
       await db
         .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
         .bind(myParticipant.id)
+        .all<{ option_id: number; availability: number }>()
+    ).results;
+    for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
+  }
+} else if (inviteToken) {
+  const inviteParticipant = await db
+    .prepare(`SELECT id, email FROM participants WHERE edit_token = ? AND poll_id = ?`)
+    .bind(inviteToken, poll.id)
+    .first<{ id: number; email: string | null }>();
+
+  if (inviteParticipant) {
+    myParticipantId = inviteParticipant.id;
+    inviteEmail = inviteParticipant.email;
+    const myVotes = (
+      await db
+        .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
+        .bind(inviteParticipant.id)
         .all<{ option_id: number; availability: number }>()
     ).results;
     for (const v of myVotes) myVoteMap.set(v.option_id, v.availability);
@@ -280,6 +301,29 @@ function cellColor(av: number | undefined): string {
         <form method="POST" action={actions.submitVote} id="vote-form">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="voteData" id="vote-data" />
+          {inviteToken && <input type="hidden" name="invite" value={inviteToken} />}
+
+          <!-- Email row: read-only for invite, required for anonymous, hidden for logged-in -->
+          {!currentUser && inviteEmail && (
+            <div class="name-row">
+              <label class="field-label">Your email</label>
+              <p class="invite-email-display">{inviteEmail}</p>
+            </div>
+          )}
+          {!currentUser && !inviteToken && (
+            <div class="name-row">
+              <label for="voter-email" class="field-label">Your email <span class="required-star">*</span></label>
+              <input
+                id="voter-email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                required
+                placeholder="you@example.com"
+                class="name-input"
+              />
+            </div>
+          )}
 
           <!-- Name row -->
           <div class="name-row">
@@ -676,6 +720,17 @@ function cellColor(av: number | undefined): string {
     color: var(--ink);
     padding: 6px 0 8px;
     outline: none;
+  }
+
+  .invite-email-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    color: var(--ink);
+    padding: 6px 0 8px;
+  }
+
+  .required-star {
+    color: var(--red);
   }
 
   .name-input::placeholder {
