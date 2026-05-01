@@ -9,7 +9,8 @@
   "compatibility_flags": [
     "nodejs_compat",
     "global_fetch_strictly_public",
-    "disable_nodejs_process_v2"
+    "disable_nodejs_process_v2",
+    "allow_eval_during_startup"
   ],
   "assets": {
     "binding": "ASSETS",
