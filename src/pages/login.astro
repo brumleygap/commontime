@@ -119,17 +119,26 @@ const errorMessages: Record<string, string> = {
     errorBox.textContent = "";
   }
 
-  // Fetch and parse JSON, throwing a diagnostic error if the response isn't JSON
+  // Fetch and parse JSON with a 20s timeout; throws a diagnostic error on non-JSON or timeout
   async function fetchJSON(input: RequestInfo, init?: RequestInit): Promise<{ status: number; data: any }> {
-    const res = await fetch(input, init);
-    const text = await res.text();
-    let data: any;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`);
+      const res = await fetch(input, { ...init, signal: controller.signal });
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`);
+      }
+      return { status: res.status, data };
+    } catch (err: any) {
+      if (err?.name === "AbortError") throw new Error("Request timed out after 20s — server may be overloaded");
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    return { status: res.status, data };
   }
 
   // Hide passkey buttons on unsupported browsers
