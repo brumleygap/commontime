@@ -36,8 +36,9 @@ if (user) {
             AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
          (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
        FROM polls p
-       WHERE p.creator_id = ?
-          OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?)
+       WHERE (p.creator_id = ?
+          OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?))
+         AND p.token NOT IN (SELECT poll_token FROM poll_dismissals WHERE user_id = ?)
        ORDER BY p.created_at DESC
        LIMIT 20`
     )
@@ -524,6 +525,7 @@ function fmtEarliest(dt: string | null) {
 </style>
 
 <script>
+  // localStorage: immediate feedback while page is open (guest fallback)
   const STORAGE_KEY = "ct_hidden_polls";
 
   function getHidden(): Set<string> {
@@ -534,8 +536,19 @@ function fmtEarliest(dt: string | null) {
     }
   }
 
-  function saveHidden(set: Set<string>) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
+  function saveHiddenLocal(token: string) {
+    const hidden = getHidden();
+    hidden.add(token);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...hidden]));
+  }
+
+  // Server-side persistence for logged-in users
+  function saveDismissalToServer(token: string) {
+    fetch("/api/polls/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => {}); // fire-and-forget; localStorage is the fallback
   }
 
   function applyHidden() {
@@ -547,10 +560,8 @@ function fmtEarliest(dt: string | null) {
 
   function dismissCard(wrap: HTMLElement) {
     const token = wrap.dataset.token!;
-    // Persist immediately so re-shows can't happen
-    const hidden = getHidden();
-    hidden.add(token);
-    saveHidden(hidden);
+    saveHiddenLocal(token);
+    saveDismissalToServer(token);
     // Animate out, then hide
     wrap.style.transition = "opacity 0.2s, transform 0.25s, max-height 0.3s, margin 0.3s";
     wrap.style.overflow = "hidden";
