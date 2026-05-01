@@ -42,7 +42,7 @@ if (user) {
        ORDER BY p.created_at DESC
        LIMIT 20`
     )
-    .bind(user.id, user.id, user.id)
+    .bind(user.id, user.id, user.id, user.id)
     .all<PollRow>();
   myPolls = results;
 } else {
