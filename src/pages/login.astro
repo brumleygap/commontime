@@ -210,7 +210,7 @@ const errorMessages: Record<string, string> = {
     continueBtn.textContent = "Checking…";
 
     try {
-      const { status, data } = await fetchJSON(`/auth/check-passkey?email=${encodeURIComponent(email)}`);
+      const { status, data } = await fetchJSON(`/auth/passkey-check?email=${encodeURIComponent(email)}`);
       if (status !== 200) throw new Error(data.error ?? "Lookup failed");
 
       if (data.hasPasskey && browserSupportsWebAuthn()) {
