@@ -547,7 +547,11 @@ function fmtEarliest(dt: string | null) {
 
   function dismissCard(wrap: HTMLElement) {
     const token = wrap.dataset.token!;
-    // Animate out: slide up and fade
+    // Persist immediately so re-shows can't happen
+    const hidden = getHidden();
+    hidden.add(token);
+    saveHidden(hidden);
+    // Animate out, then hide
     wrap.style.transition = "opacity 0.2s, transform 0.25s, max-height 0.3s, margin 0.3s";
     wrap.style.overflow = "hidden";
     wrap.style.maxHeight = wrap.offsetHeight + "px";
@@ -557,13 +561,12 @@ function fmtEarliest(dt: string | null) {
       wrap.style.maxHeight = "0";
       wrap.style.marginBottom = "0";
     });
-    wrap.addEventListener("transitionend", () => { wrap.style.display = "none"; }, { once: true });
-    const hidden = getHidden();
-    hidden.add(token);
-    saveHidden(hidden);
+    setTimeout(() => { wrap.style.display = "none"; }, 320);
   }
 
   applyHidden();
+  // Re-apply on bfcache restore (tap-back on mobile)
+  window.addEventListener("pageshow", applyHidden);
 
   document.querySelectorAll<HTMLButtonElement>(".dismiss-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
