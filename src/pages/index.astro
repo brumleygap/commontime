@@ -52,7 +52,7 @@ function heatTip(day: HeatDay): string {
   const timePart = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
     .toLowerCase().replace(" ", "");
   const votes = day.yes + day.maybe;
-  const votesStr = votes === 0 ? "no votes" : `${votes} vote${votes !== 1 ? "s" : ""}`;
+  const votesStr = votes === 0 ? "no responses" : `${votes} responding`;
   return `${datePart}, ${timePart} · ${votesStr}`;
 }
 
