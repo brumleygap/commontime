@@ -40,8 +40,8 @@ function fromBase64url(str: string): Uint8Array<ArrayBuffer> {
 ### `Uint8Array<ArrayBuffer>` vs `Uint8Array<ArrayBufferLike>`
 `Uint8Array.from(...)` returns `Uint8Array<ArrayBufferLike>`. Some libraries (e.g. `@simplewebauthn/server`) require the stricter `Uint8Array<ArrayBuffer>`. Always use `new Uint8Array(n)` and fill it manually — that always produces the concrete type.
 
-### `allow_eval_during_startup` is required for `cbor-x` (used by `@simplewebauthn/server`)
-`cbor-x` calls `new Function()` at module initialization to compile a fast CBOR decoder. Cloudflare blocks `eval`/`new Function()` by default, which kills the Worker before any handler runs — the symptom is an HTML error page returned for every request on that route (the client sees `Unexpected token '<', <!DOCTYPE`). Adding `allow_eval_during_startup` to `compatibility_flags` in `wrangler.jsonc` permits this at init time only.
+### `allow_eval_during_startup` — do NOT add to `compatibility_flags`
+`cbor-x` (used by `@simplewebauthn/server`) calls `new Function()` at module init. This is permitted via `allow_eval_during_startup`, but that flag became the **default** as of `compatibility_date` `2025-06-01`. Our date is later, so the flag is already on. Specifying it explicitly causes miniflare to reject the config and fail the build.
 
 ### `nodejs_compat` is required for some npm packages
 The `nodejs_compat` compatibility flag (set in `wrangler.jsonc`) is what allows packages like `@simplewebauthn/server` to run in Workers. It polyfills a subset of Node.js APIs but does **not** add `Buffer`.
