@@ -57,13 +57,14 @@ const errorMessages: Record<string, string> = {
                 placeholder="you@example.com"
                 class="field-input"
               />
+              <p class="email-hint">Enter your email, then create a passkey or get a link.</p>
             </div>
 
             {result?.error && (
               <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
             )}
 
-            <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;">
+            <button id="register-passkey-btn" type="button" class="ct-btn register-btn-disabled" style="width:100%;justify-content:center;" disabled>
               Create a passkey
             </button>
 
@@ -93,6 +94,16 @@ const errorMessages: Record<string, string> = {
   const emailHidden = document.getElementById("email-hidden") as HTMLInputElement | null;
   const emailForm = document.getElementById("email-form") as HTMLFormElement | null;
   const errorBox = document.getElementById("passkey-error") as HTMLDivElement | null;
+
+  // Enable/disable "Create a passkey" based on whether email has a value
+  function syncRegisterBtn() {
+    if (!registerBtn) return;
+    const hasEmail = (emailInput?.value.trim().length ?? 0) > 0;
+    registerBtn.disabled = !hasEmail;
+    registerBtn.classList.toggle("register-btn-disabled", !hasEmail);
+  }
+  emailInput?.addEventListener("input", syncRegisterBtn);
+  syncRegisterBtn();
 
   // Sync visible email field into the hidden form input before submission
   emailForm?.addEventListener("submit", (e) => {
@@ -330,6 +341,20 @@ const errorMessages: Record<string, string> = {
 
   .field-input::placeholder {
     color: var(--placeholder);
+  }
+
+  .email-hint {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  .register-btn-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .email-actions {
