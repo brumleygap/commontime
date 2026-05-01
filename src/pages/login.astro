@@ -35,46 +35,53 @@ const errorMessages: Record<string, string> = {
             <div class="error-banner">{errorMessages[errorParam]}</div>
           )}
 
-          <!-- Passkey error injected by client JS -->
+          <!-- Error box populated by client JS -->
           <div id="passkey-error" class="error-banner" style="display:none;"></div>
 
           <div class="login-card">
-            <!-- Primary: email flow (works for everyone) -->
-            <div class="field-group">
-              <label for="email" class="field-label">Email address</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autocomplete="email webauthn"
-                placeholder="you@example.com"
-                class="field-input"
-                autofocus
-              />
-              <p class="email-hint">Enter your email, then create a passkey or get a link.</p>
+            <!-- Step 1: email entry -->
+            <div id="step-email">
+              <div class="field-group">
+                <label for="email" class="field-label">Email address</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autocomplete="email webauthn"
+                  placeholder="you@example.com"
+                  class="field-input"
+                  autofocus
+                />
+              </div>
+
+              {result?.error && (
+                <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
+              )}
+
+              <button id="continue-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;" disabled>
+                Continue
+              </button>
             </div>
 
-            {result?.error && (
-              <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
-            )}
+            <!-- Step 2: options shown after email lookup (hidden initially) -->
+            <div id="step-options" style="display:none;">
+              <div class="email-back">
+                <span id="email-display" class="email-display"></span>
+                <button id="back-btn" type="button" class="back-btn">Change</button>
+              </div>
 
-            <button id="register-passkey-btn" type="button" class="ct-btn register-btn-disabled" style="width:100%;justify-content:center;" disabled>
-              Create a passkey
-            </button>
-
-            <form id="email-form" method="POST" action={actions.sendMagicLink} style="margin-top:12px;">
-              <input type="hidden" id="email-hidden" name="email" value="" />
-              <button type="submit" class="magic-link-btn" style="width:100%;text-align:center;">
-                Email me a link instead
+              <!-- "Create a passkey" — only shown when no passkey exists -->
+              <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;display:none;">
+                Create a passkey
               </button>
-            </form>
 
-            <!-- Secondary: discoverable passkey sign-in (only useful if passkey already exists) -->
-            <div id="passkey-section" class="passkey-section" style="display:none;">
-              <div class="divider"><span>or</span></div>
-              <button id="passkey-btn" type="button" class="passkey-link-btn">
-                Sign in with a passkey
-              </button>
+              <!-- Magic link form — only shown when no passkey exists -->
+              <form id="email-form" method="POST" action={actions.sendMagicLink} style="display:none;margin-top:12px;">
+                <input type="hidden" id="email-hidden" name="email" value="" />
+                <button type="submit" class="magic-link-btn" style="width:100%;text-align:center;">
+                  Email me a link instead
+                </button>
+              </form>
             </div>
           </div>
         </>
@@ -90,33 +97,32 @@ const errorMessages: Record<string, string> = {
     browserSupportsWebAuthn,
   } from "@simplewebauthn/browser";
 
-  const passkeyBtn = document.getElementById("passkey-btn") as HTMLButtonElement | null;
-  const registerBtn = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
-  const emailInput = document.getElementById("email") as HTMLInputElement | null;
-  const emailHidden = document.getElementById("email-hidden") as HTMLInputElement | null;
-  const emailForm = document.getElementById("email-form") as HTMLFormElement | null;
-  const errorBox = document.getElementById("passkey-error") as HTMLDivElement | null;
+  const emailInput    = document.getElementById("email")              as HTMLInputElement  | null;
+  const continueBtn   = document.getElementById("continue-btn")       as HTMLButtonElement | null;
+  const stepEmail     = document.getElementById("step-email")         as HTMLElement       | null;
+  const stepOptions   = document.getElementById("step-options")       as HTMLElement       | null;
+  const emailDisplay  = document.getElementById("email-display")      as HTMLElement       | null;
+  const backBtn       = document.getElementById("back-btn")           as HTMLButtonElement | null;
+  const registerBtn   = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
+  const emailForm     = document.getElementById("email-form")         as HTMLFormElement   | null;
+  const emailHidden   = document.getElementById("email-hidden")       as HTMLInputElement  | null;
+  const errorBox      = document.getElementById("passkey-error")      as HTMLDivElement    | null;
 
-  // Enable/disable "Create a passkey" based on whether email has a value
-  function syncRegisterBtn() {
-    if (!registerBtn) return;
+  // Enable Continue only when there's a non-empty email
+  function syncContinueBtn() {
+    if (!continueBtn) return;
     const hasEmail = (emailInput?.value.trim().length ?? 0) > 0;
-    registerBtn.disabled = !hasEmail;
-    registerBtn.classList.toggle("register-btn-disabled", !hasEmail);
+    continueBtn.disabled = !hasEmail;
   }
-  emailInput?.addEventListener("input", syncRegisterBtn);
-  syncRegisterBtn();
+  emailInput?.addEventListener("input", syncContinueBtn);
+  syncContinueBtn();
 
-  // Sync visible email field into the hidden form input before submission
-  emailForm?.addEventListener("submit", (e) => {
-    const email = emailInput?.value.trim() ?? "";
-    if (!email) {
+  // Allow Enter key in email field to trigger Continue
+  emailInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !continueBtn?.disabled) {
       e.preventDefault();
-      showError("Enter your email address first.");
-      emailInput?.focus();
-      return;
+      continueBtn?.click();
     }
-    if (emailHidden) emailHidden.value = email;
   });
 
   function showError(msg: string) {
@@ -132,7 +138,6 @@ const errorMessages: Record<string, string> = {
     errorBox.textContent = "";
   }
 
-  // Fetch and parse JSON with a 20s timeout; throws a diagnostic error on non-JSON or timeout
   async function fetchJSON(input: RequestInfo, init?: RequestInit): Promise<{ status: number; data: any }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
@@ -140,11 +145,8 @@ const errorMessages: Record<string, string> = {
       const res = await fetch(input, { ...init, signal: controller.signal });
       const text = await res.text();
       let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`);
-      }
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`); }
       return { status: res.status, data };
     } catch (err: any) {
       if (err?.name === "AbortError") throw new Error("Request timed out after 20s — server may be overloaded");
@@ -154,20 +156,8 @@ const errorMessages: Record<string, string> = {
     }
   }
 
-  // Show passkey sign-in section only on browsers that support WebAuthn
-  const passkeySection = document.getElementById("passkey-section") as HTMLElement | null;
-  if (browserSupportsWebAuthn()) {
-    if (passkeySection) passkeySection.style.display = "block";
-  } else {
-    if (registerBtn) registerBtn.style.display = "none";
-  }
-
-  // Discoverable sign-in — no email required
-  passkeyBtn?.addEventListener("click", async () => {
+  async function doPasskeyAuth() {
     clearError();
-    passkeyBtn.disabled = true;
-    passkeyBtn.textContent = "Waiting for biometric…";
-
     try {
       const { status: s1, data: options } = await fetchJSON("/auth/passkey-authenticate");
       if (s1 !== 200) throw new Error(options.error ?? `Auth options failed (${s1})`);
@@ -180,26 +170,83 @@ const errorMessages: Record<string, string> = {
         body: JSON.stringify(assertion),
       });
       if (!data.ok) throw new Error(data.error ?? `Sign-in failed (${s2})`);
-      passkeyBtn.textContent = "Signed in! Redirecting…";
       window.location.href = "/";
     } catch (err: any) {
-      // NotAllowedError = user cancelled — not an app error
-      if (err?.name !== "NotAllowedError") {
-        showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
+      if (err?.name === "NotAllowedError") {
+        // User cancelled — go back to email step so they can try magic link
+        showStep1();
+        showError("Passkey sign-in was cancelled. Enter your email again or use a magic link.");
+      } else {
+        showError(err?.message ?? "Something went wrong. Try again or use a magic link.");
       }
-      passkeyBtn.disabled = false;
-      passkeyBtn.textContent = "Sign in with a passkey";
+      showStep1();
+    }
+  }
+
+  function showStep1() {
+    if (stepEmail)   stepEmail.style.display   = "block";
+    if (stepOptions) stepOptions.style.display = "none";
+    emailInput?.focus();
+  }
+
+  function showStep2(email: string, hasPasskey: boolean) {
+    if (stepEmail)   stepEmail.style.display   = "none";
+    if (stepOptions) stepOptions.style.display = "block";
+    if (emailDisplay) emailDisplay.textContent = email;
+    if (emailHidden)  emailHidden.value        = email;
+
+    // Show "Create a passkey" and magic-link only when no passkey exists
+    if (registerBtn) registerBtn.style.display = hasPasskey ? "none" : "block";
+    if (emailForm)   emailForm.style.display   = hasPasskey ? "none" : "block";
+  }
+
+  // Continue button: check for passkey, then act
+  continueBtn?.addEventListener("click", async () => {
+    const email = emailInput?.value.trim() ?? "";
+    if (!email) { emailInput?.focus(); return; }
+    clearError();
+
+    continueBtn.disabled = true;
+    continueBtn.textContent = "Checking…";
+
+    try {
+      const { status, data } = await fetchJSON(`/auth/check-passkey?email=${encodeURIComponent(email)}`);
+      if (status !== 200) throw new Error(data.error ?? "Lookup failed");
+
+      if (data.hasPasskey && browserSupportsWebAuthn()) {
+        // Immediately trigger biometric — no intermediate screen
+        showStep2(email, true);
+        await doPasskeyAuth();
+      } else {
+        showStep2(email, false);
+      }
+    } catch (err: any) {
+      showError(err?.message ?? "Something went wrong. Please try again.");
+    } finally {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Continue";
     }
   });
 
-  // Register a new passkey tied to an email
-  registerBtn?.addEventListener("click", async () => {
-    const email = emailInput?.value.trim();
+  // Back button returns to step 1
+  backBtn?.addEventListener("click", () => {
+    clearError();
+    showStep1();
+  });
+
+  // Sync hidden email on magic-link form submit
+  emailForm?.addEventListener("submit", (e) => {
+    const email = emailHidden?.value ?? "";
     if (!email) {
-      emailInput?.focus();
-      showError("Enter your email address first.");
-      return;
+      e.preventDefault();
+      showError("Something went wrong — please go back and enter your email.");
     }
+  });
+
+  // Register a new passkey
+  registerBtn?.addEventListener("click", async () => {
+    const email = emailHidden?.value ?? "";
+    if (!email) { showStep1(); return; }
     clearError();
     registerBtn.disabled = true;
     registerBtn.textContent = "Waiting for biometric…";
@@ -217,7 +264,6 @@ const errorMessages: Record<string, string> = {
         body: JSON.stringify({ response: attestation, userId }),
       });
       if (!data.ok) throw new Error(data.error ?? `Registration failed (${s2})`);
-      registerBtn.textContent = "Passkey created! Redirecting…";
       window.location.href = "/";
     } catch (err: any) {
       if (err?.name !== "NotAllowedError") {
@@ -249,50 +295,6 @@ const errorMessages: Record<string, string> = {
     border: 1px solid var(--staff);
     border-top: 3px solid var(--red);
     padding: 28px 24px;
-  }
-
-  .passkey-section {
-    margin-top: 4px;
-  }
-
-  .passkey-link-btn {
-    width: 100%;
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 10px 0;
-    text-align: center;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    transition: color 0.15s;
-  }
-
-  .passkey-link-btn:hover {
-    color: var(--ink);
-  }
-
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 20px 0;
-    color: var(--muted);
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-
-  .divider::before,
-  .divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--staff);
   }
 
   .check-banner {
@@ -361,24 +363,38 @@ const errorMessages: Record<string, string> = {
     color: var(--placeholder);
   }
 
-  .email-hint {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    margin-top: 8px;
-  }
-
-  .register-btn-disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    pointer-events: none;
-  }
-
-  .email-actions {
+  .email-back {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .email-display {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 16px;
+    color: var(--ink);
+  }
+
+  .back-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 0;
+    transition: color 0.15s;
+  }
+
+  .back-btn:hover {
+    color: var(--ink);
   }
 
   .magic-link-btn {
