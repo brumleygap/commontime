@@ -19,7 +19,7 @@
     "enabled": true
   },
   "triggers": {
-    "crons": ["0 3 * * *"]
+    "crons": ["0 7 * * *"]
   },
   "services": [
     {
