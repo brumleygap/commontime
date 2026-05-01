@@ -34,38 +34,246 @@ const errorMessages: Record<string, string> = {
           {errorParam && errorMessages[errorParam] && (
             <div class="error-banner">{errorMessages[errorParam]}</div>
           )}
-          {result?.error && (
-            <div class="error-banner">{result.error.message}</div>
-          )}
+
+          <!-- Error box populated by client JS -->
+          <div id="passkey-error" class="error-banner" style="display:none;"></div>
 
           <div class="login-card">
-            <form method="POST" action={actions.sendMagicLink}>
+            <!-- Step 1: email entry -->
+            <div id="step-email">
               <div class="field-group">
                 <label for="email" class="field-label">Email address</label>
                 <input
                   id="email"
                   name="email"
                   type="email"
-                  required
-                  autofocus
-                  autocomplete="email"
+                  autocomplete="email webauthn"
                   placeholder="you@example.com"
                   class="field-input"
+                  autofocus
                 />
               </div>
 
-              <p class="hint-text">We'll send a one-click login link — no password needed.</p>
+              {result?.error && (
+                <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
+              )}
 
-              <button type="submit" class="ct-btn" style="width:100%;justify-content:center;">
-                Send magic link ♩
+              <button id="continue-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;" disabled>
+                Continue
               </button>
-            </form>
+            </div>
+
+            <!-- Step 2: options shown after email lookup (hidden initially) -->
+            <div id="step-options" style="display:none;">
+              <div class="email-back">
+                <span id="email-display" class="email-display"></span>
+                <button id="back-btn" type="button" class="back-btn">Change</button>
+              </div>
+
+              <!-- "Create a passkey" — only shown when no passkey exists -->
+              <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;display:none;">
+                Create a passkey
+              </button>
+
+              <!-- Magic link form — only shown when no passkey exists -->
+              <form id="email-form" method="POST" action={actions.sendMagicLink} style="display:none;margin-top:12px;">
+                <input type="hidden" id="email-hidden" name="email" value="" />
+                <button type="submit" class="magic-link-btn" style="width:100%;text-align:center;">
+                  Email me a link instead
+                </button>
+              </form>
+            </div>
           </div>
         </>
       )}
     </div>
   </section>
 </BaseLayout>
+
+<script>
+  import {
+    startRegistration,
+    startAuthentication,
+    browserSupportsWebAuthn,
+  } from "@simplewebauthn/browser";
+
+  const emailInput    = document.getElementById("email")              as HTMLInputElement  | null;
+  const continueBtn   = document.getElementById("continue-btn")       as HTMLButtonElement | null;
+  const stepEmail     = document.getElementById("step-email")         as HTMLElement       | null;
+  const stepOptions   = document.getElementById("step-options")       as HTMLElement       | null;
+  const emailDisplay  = document.getElementById("email-display")      as HTMLElement       | null;
+  const backBtn       = document.getElementById("back-btn")           as HTMLButtonElement | null;
+  const registerBtn   = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
+  const emailForm     = document.getElementById("email-form")         as HTMLFormElement   | null;
+  const emailHidden   = document.getElementById("email-hidden")       as HTMLInputElement  | null;
+  const errorBox      = document.getElementById("passkey-error")      as HTMLDivElement    | null;
+
+  // Enable Continue only when there's a non-empty email
+  function syncContinueBtn() {
+    if (!continueBtn) return;
+    const hasEmail = (emailInput?.value.trim().length ?? 0) > 0;
+    continueBtn.disabled = !hasEmail;
+  }
+  emailInput?.addEventListener("input", syncContinueBtn);
+  syncContinueBtn();
+
+  // Allow Enter key in email field to trigger Continue
+  emailInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !continueBtn?.disabled) {
+      e.preventDefault();
+      continueBtn?.click();
+    }
+  });
+
+  function showError(msg: string) {
+    if (!errorBox) return;
+    errorBox.textContent = msg;
+    errorBox.style.display = "block";
+    errorBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function clearError() {
+    if (!errorBox) return;
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+  }
+
+  async function fetchJSON(input: RequestInfo, init?: RequestInit): Promise<{ status: number; data: any }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const res = await fetch(input, { ...init, signal: controller.signal });
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`); }
+      return { status: res.status, data };
+    } catch (err: any) {
+      if (err?.name === "AbortError") throw new Error("Request timed out after 20s — server may be overloaded");
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function doPasskeyAuth() {
+    clearError();
+    try {
+      const { status: s1, data: options } = await fetchJSON("/auth/passkey-authenticate");
+      if (s1 !== 200) throw new Error(options.error ?? `Auth options failed (${s1})`);
+
+      const assertion = await startAuthentication({ optionsJSON: options });
+
+      const { status: s2, data } = await fetchJSON("/auth/passkey-authenticate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assertion),
+      });
+      if (!data.ok) throw new Error(data.error ?? `Sign-in failed (${s2})`);
+      window.location.href = "/";
+    } catch (err: any) {
+      if (err?.name === "NotAllowedError") {
+        // User cancelled — go back to email step so they can try magic link
+        showStep1();
+        showError("Passkey sign-in was cancelled. Enter your email again or use a magic link.");
+      } else {
+        showError(err?.message ?? "Something went wrong. Try again or use a magic link.");
+      }
+      showStep1();
+    }
+  }
+
+  function showStep1() {
+    if (stepEmail)   stepEmail.style.display   = "block";
+    if (stepOptions) stepOptions.style.display = "none";
+    emailInput?.focus();
+  }
+
+  function showStep2(email: string, hasPasskey: boolean) {
+    if (stepEmail)   stepEmail.style.display   = "none";
+    if (stepOptions) stepOptions.style.display = "block";
+    if (emailDisplay) emailDisplay.textContent = email;
+    if (emailHidden)  emailHidden.value        = email;
+
+    // Show "Create a passkey" and magic-link only when no passkey exists
+    if (registerBtn) registerBtn.style.display = hasPasskey ? "none" : "block";
+    if (emailForm)   emailForm.style.display   = hasPasskey ? "none" : "block";
+  }
+
+  // Continue button: check for passkey, then act
+  continueBtn?.addEventListener("click", async () => {
+    const email = emailInput?.value.trim() ?? "";
+    if (!email) { emailInput?.focus(); return; }
+    clearError();
+
+    continueBtn.disabled = true;
+    continueBtn.textContent = "Checking…";
+
+    try {
+      const { status, data } = await fetchJSON(`/auth/passkey-check?email=${encodeURIComponent(email)}`);
+      if (status !== 200) throw new Error(data.error ?? "Lookup failed");
+
+      if (data.hasPasskey && browserSupportsWebAuthn()) {
+        // Immediately trigger biometric — no intermediate screen
+        showStep2(email, true);
+        await doPasskeyAuth();
+      } else {
+        showStep2(email, false);
+      }
+    } catch (err: any) {
+      showError(err?.message ?? "Something went wrong. Please try again.");
+    } finally {
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Continue";
+    }
+  });
+
+  // Back button returns to step 1
+  backBtn?.addEventListener("click", () => {
+    clearError();
+    showStep1();
+  });
+
+  // Sync hidden email on magic-link form submit
+  emailForm?.addEventListener("submit", (e) => {
+    const email = emailHidden?.value ?? "";
+    if (!email) {
+      e.preventDefault();
+      showError("Something went wrong — please go back and enter your email.");
+    }
+  });
+
+  // Register a new passkey
+  registerBtn?.addEventListener("click", async () => {
+    const email = emailHidden?.value ?? "";
+    if (!email) { showStep1(); return; }
+    clearError();
+    registerBtn.disabled = true;
+    registerBtn.textContent = "Waiting for biometric…";
+
+    try {
+      const { status: s1, data: optionsData } = await fetchJSON(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
+      if (s1 !== 200) throw new Error(optionsData.error ?? `Register options failed (${s1})`);
+      const { options, userId } = optionsData;
+
+      const attestation = await startRegistration({ optionsJSON: options });
+
+      const { status: s2, data } = await fetchJSON("/auth/passkey-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: attestation, userId }),
+      });
+      if (!data.ok) throw new Error(data.error ?? `Registration failed (${s2})`);
+      window.location.href = "/";
+    } catch (err: any) {
+      if (err?.name !== "NotAllowedError") {
+        showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
+      }
+      registerBtn.disabled = false;
+      registerBtn.textContent = "Create a passkey";
+    }
+  });
+</script>
 
 <style>
   .login-title {
@@ -155,11 +363,56 @@ const errorMessages: Record<string, string> = {
     color: var(--placeholder);
   }
 
-  .hint-text {
+  .email-back {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .email-display {
     font-family: 'Libre Baskerville', serif;
-    font-size: 15px;
-    font-style: italic;
+    font-size: 16px;
+    color: var(--ink);
+  }
+
+  .back-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 0;
+    transition: color 0.15s;
+  }
+
+  .back-btn:hover {
+    color: var(--ink);
+  }
+
+  .magic-link-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 10px 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .magic-link-btn:hover {
+    color: var(--ink);
   }
 </style>

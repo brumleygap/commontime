@@ -12,6 +12,48 @@ Before writing any code to fix a visual bug, establish what is actually happenin
 
 The canonical failure mode is making several CSS changes based on guesses, none of which address the real cause. The diagnostic overlay pattern (a `position:fixed` element that prints live measurements) is cheap to deploy and immediately distinguishes browser-level issues (wrong viewport, desktop-mode, zoom setting) from CSS issues.
 
+## Cloudflare Workers runtime constraints
+
+This app runs in the **Workers runtime**, not Node.js. These constraints have already caused bugs — don't repeat them:
+
+### No `Buffer`
+`Buffer` is a Node.js global. It is not available in Workers, even with `nodejs_compat`. Use Web Crypto equivalents:
+
+```ts
+// Encode Uint8Array → base64url
+function toBase64url(buf: Uint8Array): string {
+  return btoa(String.fromCharCode(...buf))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+// Decode base64url → Uint8Array<ArrayBuffer>
+function fromBase64url(str: string): Uint8Array<ArrayBuffer> {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+```
+
+### `Uint8Array<ArrayBuffer>` vs `Uint8Array<ArrayBufferLike>`
+`Uint8Array.from(...)` returns `Uint8Array<ArrayBufferLike>`. Some libraries (e.g. `@simplewebauthn/server`) require the stricter `Uint8Array<ArrayBuffer>`. Always use `new Uint8Array(n)` and fill it manually — that always produces the concrete type.
+
+### `allow_eval_during_startup` — do NOT add to `compatibility_flags`
+`cbor-x` (used by `@simplewebauthn/server`) calls `new Function()` at module init. This is permitted via `allow_eval_during_startup`, but that flag became the **default** as of `compatibility_date` `2025-06-01`. Our date is later, so the flag is already on. Specifying it explicitly causes miniflare to reject the config and fail the build.
+
+### `nodejs_compat` is required for some npm packages
+The `nodejs_compat` compatibility flag (set in `wrangler.jsonc`) is what allows packages like `@simplewebauthn/server` to run in Workers. It polyfills a subset of Node.js APIs but does **not** add `Buffer`.
+
+### rpId / origin must be derived at runtime
+WebAuthn's `rpID` and `expectedOrigin` must match the actual hostname the browser sees. Never hardcode `commontime.app` — derive it from the request URL so the same code works on both production and preview deployments:
+
+```ts
+const rpID = new URL(request.url).hostname;
+const expectedOrigin = new URL(request.url).origin;
+```
+
 ## Commands
 
 ```bash

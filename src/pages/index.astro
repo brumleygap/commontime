@@ -8,16 +8,96 @@ type PollRow = {
   token: string;
   title: string;
   created_at: string;
-  is_creator: number;  // 1 | 0
-  is_locked: number;   // 1 if chosen_option_id is set
-  is_open: number;     // 1 if any option_datetime is in the future (and not locked)
+  is_creator: number;
+  is_locked: number;
+  is_open: number;
   participant_count: number;
   responded_count: number;
-  earliest_option: string | null;
+  // "YYYY-MM-DDTHH:MM|yesCount|maybeCount~..." one entry per option, sorted by datetime
+  options_data: string | null;
+  chosen_datetime: string | null;
 };
 
-let myPolls: PollRow[] = [];
-let guestPolls: PollRow[] = [];
+type OptionData = { dt: string; yes: number; maybe: number };
+type HeatDay    = { date: string; bestDt: string; score: number; max: number; yes: number; maybe: number };
+
+type EnrichedPoll = PollRow & {
+  heatDays: HeatDay[];
+  chosenFormatted: string | null;
+};
+
+function parseOptions(raw: string | null): OptionData[] {
+  if (!raw) return [];
+  return raw.split("~").map(part => {
+    const [dt, yes, maybe] = part.split("|");
+    return { dt: dt ?? "", yes: parseInt(yes) || 0, maybe: parseInt(maybe) || 0 };
+  });
+}
+
+function buildHeatDays(options: OptionData[], participantCount: number): HeatDay[] {
+  const days = new Map<string, { bestDt: string; score: number; yes: number; maybe: number }>();
+  for (const opt of options) {
+    const date = opt.dt.slice(0, 10);
+    const score = opt.yes * 2 + opt.maybe;
+    const existing = days.get(date);
+    if (!existing || score > existing.score) days.set(date, { bestDt: opt.dt, score, yes: opt.yes, maybe: opt.maybe });
+  }
+  const max = participantCount * 2;
+  return [...days.entries()].map(([date, v]) => ({ date, max, ...v }));
+}
+
+function heatTip(day: HeatDay): string {
+  const d = new Date(day.bestDt);
+  const datePart = `${d.getMonth() + 1}/${d.getDate()}`;
+  const timePart = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+    .toLowerCase().replace(" ", "");
+  const votes = day.yes + day.maybe;
+  const votesStr = votes === 0 ? "no responses" : `${votes} responding`;
+  return `${datePart}, ${timePart} · ${votesStr}`;
+}
+
+function cellStyle(score: number, max: number): string {
+  if (max === 0 || score === 0) return "background:#fff;border:1px solid #d4cfc6;";
+  const r = score / max;
+  if (r >= 0.66) return "background:#4ade80;";
+  if (r >= 0.33) return "background:#a7f3d0;";
+  return "background:#d4cfc6;";
+}
+
+function fmtChosen(dt: string | null): string | null {
+  if (!dt) return null;
+  const d = new Date(dt);
+  return (
+    d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) +
+    " · " +
+    d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  );
+}
+
+function enrich(p: PollRow): EnrichedPoll {
+  return {
+    ...p,
+    heatDays: buildHeatDays(parseOptions(p.options_data), p.participant_count),
+    chosenFormatted: fmtChosen(p.chosen_datetime),
+  };
+}
+
+// Subquery fragments reused in both queries
+const OPTIONS_DATA_SQL = `
+  (SELECT GROUP_CONCAT(
+      po.option_datetime || '|' ||
+      CAST(COALESCE((SELECT COUNT(*) FROM votes WHERE option_id = po.id AND availability = 1), 0) AS TEXT) || '|' ||
+      CAST(COALESCE((SELECT COUNT(*) FROM votes WHERE option_id = po.id AND availability = 2), 0) AS TEXT),
+      '~'
+    ) FROM poll_options po WHERE po.poll_id = p.id ORDER BY po.option_datetime
+  ) AS options_data`;
+
+const CHOSEN_DT_SQL = `
+  (SELECT po.option_datetime FROM poll_options po WHERE po.id = p.chosen_option_id
+  ) AS chosen_datetime`;
+
+let myPolls: EnrichedPoll[] = [];
+let guestPolls: EnrichedPoll[] = [];
 
 if (user) {
   const { results } = await env.DB
@@ -34,16 +114,18 @@ if (user) {
           FROM participants par
           WHERE par.poll_id = p.id
             AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
-         (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+         ${OPTIONS_DATA_SQL},
+         ${CHOSEN_DT_SQL}
        FROM polls p
-       WHERE p.creator_id = ?
-          OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?)
+       WHERE (p.creator_id = ?
+          OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?))
+         AND p.token NOT IN (SELECT poll_token FROM poll_dismissals WHERE user_id = ?)
        ORDER BY p.created_at DESC
        LIMIT 20`
     )
-    .bind(user.id, user.id, user.id)
+    .bind(user.id, user.id, user.id, user.id)
     .all<PollRow>();
-  myPolls = results;
+  myPolls = results.map(enrich);
 } else {
   const guestCookie = Astro.cookies.get("recent_polls")?.value ?? "";
   const guestTokens = guestCookie ? guestCookie.split(",").filter(Boolean) : [];
@@ -63,20 +145,16 @@ if (user) {
             FROM participants par
             WHERE par.poll_id = p.id
               AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
-           (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+           ${OPTIONS_DATA_SQL},
+           ${CHOSEN_DT_SQL}
          FROM polls p
          WHERE p.token IN (${placeholders})
          ORDER BY p.created_at DESC`
       )
       .bind(...guestTokens)
       .all<PollRow>();
-    guestPolls = results;
+    guestPolls = results.map(enrich);
   }
-}
-
-function fmtEarliest(dt: string | null) {
-  if (!dt) return null;
-  return new Date(dt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 ---
 
@@ -89,7 +167,7 @@ function fmtEarliest(dt: string | null) {
           <p class="ct-eyebrow" style="margin-bottom: 2px;">Your polls</p>
           <p class="dash-sub">Polls you've created or responded to</p>
         </div>
-        <a href="/create" class="new-poll-btn">♩ New poll</a>
+        <a href="/create" class="new-poll-btn">♩ Create a poll</a>
       </div>
 
       {myPolls.length === 0 ? (
@@ -101,24 +179,40 @@ function fmtEarliest(dt: string | null) {
       ) : (
         <div class="poll-list">
           {myPolls.map((poll) => (
-            <a href={`/poll/${poll.token}`} class={`poll-row${poll.is_creator ? " creator" : ""}`}>
-              <div class="poll-row-body">
-                <span class="poll-row-title">{poll.title}</span>
-                <div class="poll-row-meta">
+            <div class="poll-card-wrap" data-token={poll.token}>
+              <div class={`poll-row${poll.is_creator ? " creator" : ""}`}>
+                <div class="poll-row-body">
+                  <a href={`/poll/${poll.token}`} class="poll-title-link">
+                    <span class="poll-row-title">{poll.title}</span>
+                  </a>
+                  <div class="poll-row-meta">
+                    {poll.is_locked
+                      ? <span class="status-badge locked">date set</span>
+                      : poll.is_open
+                        ? <span class="status-badge open">open</span>
+                        : <span class="status-badge past">past</span>}
+                    {poll.is_creator ? <span class="badge">Your Poll</span> : null}
+                    <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                  </div>
                   {poll.is_locked
-                    ? <span class="status-badge locked">date set</span>
-                    : poll.is_open
-                      ? <span class="status-badge open">open</span>
-                      : <span class="status-badge past">past</span>}
-                  {poll.is_creator ? <span class="badge">yours</span> : null}
-                  <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                  {poll.earliest_option && (
-                    <span>from {fmtEarliest(poll.earliest_option)}</span>
-                  )}
+                    ? poll.chosenFormatted && (
+                        <div class="poll-row-chosen">{poll.chosenFormatted}</div>
+                      )
+                    : poll.heatDays.length > 0 && (
+                        <div class="poll-row-heat">
+                          {poll.heatDays.slice(0, 14).map(day => (
+                            <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day)}></div>
+                          ))}
+                          {poll.heatDays.length > 14 && (
+                            <span class="heat-more">+{poll.heatDays.length - 14}</span>
+                          )}
+                        </div>
+                      )
+                  }
                 </div>
               </div>
-              <span class="poll-row-arrow" aria-hidden="true">→</span>
-            </a>
+              <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
+            </div>
           ))}
         </div>
       )}
@@ -135,21 +229,39 @@ function fmtEarliest(dt: string | null) {
 
       <div class="poll-list">
         {guestPolls.map((poll) => (
-          <a href={`/poll/${poll.token}`} class="poll-row">
-            <div class="poll-row-body">
-              <span class="poll-row-title">{poll.title}</span>
-              <div class="poll-row-meta">
-                {poll.is_open
-                  ? <span class="status-badge open">open</span>
-                  : <span class="status-badge past">past</span>}
-                <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                {poll.earliest_option && (
-                  <span>from {fmtEarliest(poll.earliest_option)}</span>
-                )}
+          <div class="poll-card-wrap" data-token={poll.token}>
+            <div class="poll-row">
+              <div class="poll-row-body">
+                <a href={`/poll/${poll.token}`} class="poll-title-link">
+                  <span class="poll-row-title">{poll.title}</span>
+                </a>
+                <div class="poll-row-meta">
+                  {poll.is_locked
+                    ? <span class="status-badge locked">date set</span>
+                    : poll.is_open
+                      ? <span class="status-badge open">open</span>
+                      : <span class="status-badge past">past</span>}
+                  <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                </div>
+                {poll.is_locked
+                  ? poll.chosenFormatted && (
+                      <div class="poll-row-chosen">{poll.chosenFormatted}</div>
+                    )
+                  : poll.heatDays.length > 0 && (
+                      <div class="poll-row-heat">
+                        {poll.heatDays.slice(0, 14).map(day => (
+                          <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day)}></div>
+                        ))}
+                        {poll.heatDays.length > 14 && (
+                          <span class="heat-more">+{poll.heatDays.length - 14}</span>
+                        )}
+                      </div>
+                    )
+                }
               </div>
             </div>
-            <span class="poll-row-arrow" aria-hidden="true">→</span>
-          </a>
+            <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
+          </div>
         ))}
       </div>
 
@@ -242,33 +354,61 @@ function fmtEarliest(dt: string | null) {
     gap: 10px;
   }
 
-  .poll-row {
+  .poll-card-wrap {
+    position: relative;
+  }
+
+  .dismiss-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 16px 18px;
-    text-decoration: none;
-    color: inherit;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.1s, color 0.1s;
+    z-index: 1;
+  }
+
+  .dismiss-btn:hover {
+    background: var(--staff);
+    color: var(--ink);
+  }
+
+  .poll-row {
+    padding: 16px 40px 16px 18px;
     border: 1px solid var(--staff);
     border-left: 3px solid var(--staff);
     background: #fff;
     box-shadow: 0 2px 6px rgba(15, 15, 14, 0.07), 0 1px 2px rgba(15, 15, 14, 0.04);
-    transition: background 0.12s, box-shadow 0.12s, transform 0.12s;
+    transition: background 0.12s, box-shadow 0.12s;
   }
 
   .poll-row.creator {
     border-left-color: var(--red);
   }
 
-  .poll-row:hover {
-    background: var(--day-bg);
-    box-shadow: 0 6px 16px rgba(15, 15, 14, 0.11), 0 2px 4px rgba(15, 15, 14, 0.06);
-    transform: translateY(-1px);
+  .poll-row-body {
+    min-width: 0;
   }
 
-  .poll-row-body {
-    flex: 1;
-    min-width: 0;
+  .poll-title-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+
+  .poll-title-link:hover .poll-row-title {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .poll-row-title {
@@ -299,8 +439,8 @@ function fmtEarliest(dt: string | null) {
     font-size: 12px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: #1d4ed8;
+    border: 1px solid #1d4ed8;
     padding: 2px 7px;
   }
 
@@ -318,8 +458,8 @@ function fmtEarliest(dt: string | null) {
   }
 
   .status-badge.locked {
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: var(--ink);
+    border: 1px solid var(--ink);
   }
 
   .status-badge.past {
@@ -327,17 +467,65 @@ function fmtEarliest(dt: string | null) {
     border: 1px solid var(--staff);
   }
 
-  .poll-row-arrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 14px;
-    color: var(--staff);
-    flex-shrink: 0;
-    transition: color 0.1s, transform 0.1s;
+  /* ── Heatmap ─────────────────────────────────────────────── */
+  .poll-row-heat {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    margin-top: 8px;
   }
 
-  .poll-row:hover .poll-row-arrow {
+  .heat-cell {
+    width: 8px;
+    height: 16px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .heat-more {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  :global(.heat-tooltip) {
+    position: fixed;
+    background: var(--ink);
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 10px;
+    pointer-events: none;
+    z-index: 200;
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+  }
+
+  :global(.heat-panel) {
+    position: fixed;
+    right: 16px;
+    background: var(--ink);
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    line-height: 2;
+    padding: 10px 14px;
+    z-index: 300;
+    min-width: 170px;
+    pointer-events: none;
+  }
+
+  /* ── Chosen date (locked polls) ──────────────────────────── */
+  .poll-row-chosen {
+    margin-top: 7px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
     color: var(--ink);
-    transform: translateX(2px);
   }
 
   /* ── Empty state ─────────────────────────────────────────── */
@@ -475,7 +663,7 @@ function fmtEarliest(dt: string | null) {
     }
 
     .poll-row {
-      padding: 14px 14px;
+      padding: 14px 36px 14px 14px;
     }
 
     .poll-row-title {
@@ -487,3 +675,127 @@ function fmtEarliest(dt: string | null) {
     }
   }
 </style>
+
+<script>
+  // localStorage: immediate feedback while page is open (guest fallback)
+  const STORAGE_KEY = "ct_hidden_polls";
+
+  function getHidden(): Set<string> {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveHiddenLocal(token: string) {
+    const hidden = getHidden();
+    hidden.add(token);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...hidden]));
+  }
+
+  // Server-side persistence for logged-in users
+  function saveDismissalToServer(token: string) {
+    fetch("/api/polls/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => {}); // fire-and-forget; localStorage is the fallback
+  }
+
+  function applyHidden() {
+    const hidden = getHidden();
+    document.querySelectorAll<HTMLElement>(".poll-card-wrap[data-token]").forEach((el) => {
+      if (hidden.has(el.dataset.token!)) el.style.display = "none";
+    });
+  }
+
+  function dismissCard(wrap: HTMLElement) {
+    const token = wrap.dataset.token!;
+    saveHiddenLocal(token);
+    saveDismissalToServer(token);
+    // Animate out, then hide
+    wrap.style.transition = "opacity 0.2s, transform 0.25s, max-height 0.3s, margin 0.3s";
+    wrap.style.overflow = "hidden";
+    wrap.style.maxHeight = wrap.offsetHeight + "px";
+    requestAnimationFrame(() => {
+      wrap.style.opacity = "0";
+      wrap.style.transform = "translateX(40px)";
+      wrap.style.maxHeight = "0";
+      wrap.style.marginBottom = "0";
+    });
+    setTimeout(() => { wrap.style.display = "none"; }, 320);
+  }
+
+  applyHidden();
+  window.addEventListener("pageshow", applyHidden);
+
+  const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
+  // ── Desktop: per-cell hover tooltip ────────────────────────
+  if (!isTouch) {
+    const tip = document.createElement("div");
+    tip.className = "heat-tooltip";
+    tip.style.display = "none";
+    document.body.appendChild(tip);
+
+    document.querySelectorAll<HTMLElement>(".heat-cell[data-tip]").forEach((cell) => {
+      cell.addEventListener("mouseenter", () => {
+        tip.textContent = cell.dataset.tip!;
+        tip.style.display = "block";
+        const r = cell.getBoundingClientRect();
+        tip.style.left = (r.left + r.width / 2) + "px";
+        tip.style.top  = (r.top - 8) + "px";
+      });
+      cell.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+    });
+  }
+
+  // ── Mobile: tap whole heatmap row → panel on right side ────
+  if (isTouch) {
+    const panel = document.createElement("div");
+    panel.className = "heat-panel";
+    panel.style.display = "none";
+    document.body.appendChild(panel);
+
+    document.querySelectorAll<HTMLElement>(".poll-row-heat").forEach((heat) => {
+      heat.style.cursor = "pointer";
+      heat.addEventListener("click", (e) => {
+        e.stopPropagation(); // prevent card navigation
+        const tips = [...heat.querySelectorAll<HTMLElement>(".heat-cell[data-tip]")]
+          .map(c => c.dataset.tip!);
+        panel.innerHTML = "";
+        tips.forEach(t => {
+          const row = document.createElement("div");
+          row.textContent = t;
+          panel.appendChild(row);
+        });
+        const r = heat.getBoundingClientRect();
+        panel.style.top = Math.max(60, r.top - 4) + "px";
+        panel.style.display = "block";
+      });
+    });
+
+    // Dismiss on any tap outside the heatmap
+    document.addEventListener("click", () => { panel.style.display = "none"; });
+  }
+
+  // ── Click anywhere on card to navigate ─────────────────────
+  document.querySelectorAll<HTMLElement>(".poll-card-wrap[data-token]").forEach((wrap) => {
+    wrap.style.cursor = "pointer";
+    wrap.addEventListener("click", (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest(".dismiss-btn") || t.closest("a") || t.closest(".poll-row-heat")) return;
+      window.location.href = `/poll/${wrap.dataset.token}`;
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".dismiss-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = btn.closest<HTMLElement>(".poll-card-wrap");
+      if (wrap) dismissCard(wrap);
+    });
+  });
+</script>
