@@ -119,6 +119,19 @@ const errorMessages: Record<string, string> = {
     errorBox.textContent = "";
   }
 
+  // Fetch and parse JSON, throwing a diagnostic error if the response isn't JSON
+  async function fetchJSON(input: RequestInfo, init?: RequestInit): Promise<{ status: number; data: any }> {
+    const res = await fetch(input, init);
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`);
+    }
+    return { status: res.status, data };
+  }
+
   // Hide passkey buttons on unsupported browsers
   if (!browserSupportsWebAuthn()) {
     if (passkeyBtn) passkeyBtn.style.display = "none";
@@ -134,25 +147,17 @@ const errorMessages: Record<string, string> = {
     passkeyBtn.textContent = "Waiting for biometric…";
 
     try {
-      const optionsRes = await fetch("/auth/passkey-authenticate");
-      const optionsData = await optionsRes.json();
-      if (!optionsRes.ok) throw new Error(optionsData.error ?? "Could not start sign-in.");
-      const options = optionsData;
+      const { status: s1, data: options } = await fetchJSON("/auth/passkey-authenticate");
+      if (s1 !== 200) throw new Error(options.error ?? `Auth options failed (${s1})`);
 
       const assertion = await startAuthentication({ optionsJSON: options });
 
-      const verifyRes = await fetch("/auth/passkey-authenticate", {
+      const { status: s2, data } = await fetchJSON("/auth/passkey-authenticate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(assertion),
       });
-
-      const data = await verifyRes.json();
-      if (data.ok) {
-        window.location.href = "/";
-      } else {
-        throw new Error(data.error ?? "Sign-in failed.");
-      }
+      if (!data.ok) throw new Error(data.error ?? `Sign-in failed (${s2})`);
     } catch (err: any) {
       // NotAllowedError = user cancelled — not an app error
       if (err?.name !== "NotAllowedError") {
@@ -176,25 +181,18 @@ const errorMessages: Record<string, string> = {
     registerBtn.textContent = "Waiting for biometric…";
 
     try {
-      const optionsRes = await fetch(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
-      const optionsData = await optionsRes.json();
-      if (!optionsRes.ok) throw new Error(optionsData.error ?? "Could not start registration.");
+      const { status: s1, data: optionsData } = await fetchJSON(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
+      if (s1 !== 200) throw new Error(optionsData.error ?? `Register options failed (${s1})`);
       const { options, userId } = optionsData;
 
       const attestation = await startRegistration({ optionsJSON: options });
 
-      const verifyRes = await fetch("/auth/passkey-register", {
+      const { status: s2, data } = await fetchJSON("/auth/passkey-register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response: attestation, userId }),
       });
-
-      const data = await verifyRes.json();
-      if (data.ok) {
-        window.location.href = "/";
-      } else {
-        throw new Error(data.error ?? "Registration failed.");
-      }
+      if (!data.ok) throw new Error(data.error ?? `Registration failed (${s2})`);
     } catch (err: any) {
       if (err?.name !== "NotAllowedError") {
         showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
