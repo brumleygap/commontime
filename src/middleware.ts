@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 
 // Poll pages and the home/create pages are publicly accessible.
 // Magic-link auth paths must also be public.
-const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/poll/", "/create"];
+const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/auth/passkey-", "/poll/", "/create"];
 
 export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
