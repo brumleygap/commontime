@@ -41,7 +41,7 @@ const errorMessages: Record<string, string> = {
           <div class="login-card">
             <!-- Primary: discoverable passkey sign-in (no email needed) -->
             <button id="passkey-btn" type="button" class="ct-btn passkey-primary-btn">
-              Sign in with Face ID / Touch ID
+              Sign in with a passkey
             </button>
 
             <div class="divider"><span>or use your email</span></div>
@@ -64,7 +64,7 @@ const errorMessages: Record<string, string> = {
             )}
 
             <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;">
-              Set up Face ID
+              Create a passkey
             </button>
 
             <form id="email-form" method="POST" action={actions.sendMagicLink} style="margin-top:12px;">
@@ -159,7 +159,7 @@ const errorMessages: Record<string, string> = {
         showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
       }
       passkeyBtn.disabled = false;
-      passkeyBtn.textContent = "Sign in with Face ID / Touch ID";
+      passkeyBtn.textContent = "Sign in with a passkey";
     }
   });
 
@@ -200,7 +200,7 @@ const errorMessages: Record<string, string> = {
         showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
       }
       registerBtn.disabled = false;
-      registerBtn.textContent = "Set up Face ID";
+      registerBtn.textContent = "Create a passkey";
     }
   });
 </script>
