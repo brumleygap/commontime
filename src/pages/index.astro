@@ -101,24 +101,27 @@ function fmtEarliest(dt: string | null) {
       ) : (
         <div class="poll-list">
           {myPolls.map((poll) => (
-            <a href={`/poll/${poll.token}`} class={`poll-row${poll.is_creator ? " creator" : ""}`}>
-              <div class="poll-row-body">
-                <span class="poll-row-title">{poll.title}</span>
-                <div class="poll-row-meta">
-                  {poll.is_locked
-                    ? <span class="status-badge locked">date set</span>
-                    : poll.is_open
-                      ? <span class="status-badge open">open</span>
-                      : <span class="status-badge past">past</span>}
-                  {poll.is_creator ? <span class="badge">yours</span> : null}
-                  <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                  {poll.earliest_option && (
-                    <span>from {fmtEarliest(poll.earliest_option)}</span>
-                  )}
+            <div class="poll-card-wrap" data-token={poll.token}>
+              <a href={`/poll/${poll.token}`} class={`poll-row${poll.is_creator ? " creator" : ""}`}>
+                <div class="poll-row-body">
+                  <span class="poll-row-title">{poll.title}</span>
+                  <div class="poll-row-meta">
+                    {poll.is_locked
+                      ? <span class="status-badge locked">date set</span>
+                      : poll.is_open
+                        ? <span class="status-badge open">open</span>
+                        : <span class="status-badge past">past</span>}
+                    {poll.is_creator ? <span class="badge">yours</span> : null}
+                    <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                    {poll.earliest_option && (
+                      <span>from {fmtEarliest(poll.earliest_option)}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <span class="poll-row-arrow" aria-hidden="true">→</span>
-            </a>
+                <span class="poll-row-arrow" aria-hidden="true">→</span>
+              </a>
+              <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
+            </div>
           ))}
         </div>
       )}
@@ -135,21 +138,24 @@ function fmtEarliest(dt: string | null) {
 
       <div class="poll-list">
         {guestPolls.map((poll) => (
-          <a href={`/poll/${poll.token}`} class="poll-row">
-            <div class="poll-row-body">
-              <span class="poll-row-title">{poll.title}</span>
-              <div class="poll-row-meta">
-                {poll.is_open
-                  ? <span class="status-badge open">open</span>
-                  : <span class="status-badge past">past</span>}
-                <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                {poll.earliest_option && (
-                  <span>from {fmtEarliest(poll.earliest_option)}</span>
-                )}
+          <div class="poll-card-wrap" data-token={poll.token}>
+            <a href={`/poll/${poll.token}`} class="poll-row">
+              <div class="poll-row-body">
+                <span class="poll-row-title">{poll.title}</span>
+                <div class="poll-row-meta">
+                  {poll.is_open
+                    ? <span class="status-badge open">open</span>
+                    : <span class="status-badge past">past</span>}
+                  <span>{poll.responded_count} / {poll.participant_count} responded</span>
+                  {poll.earliest_option && (
+                    <span>from {fmtEarliest(poll.earliest_option)}</span>
+                  )}
+                </div>
               </div>
-            </div>
-            <span class="poll-row-arrow" aria-hidden="true">→</span>
-          </a>
+              <span class="poll-row-arrow" aria-hidden="true">→</span>
+            </a>
+            <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
+          </div>
         ))}
       </div>
 
@@ -242,11 +248,40 @@ function fmtEarliest(dt: string | null) {
     gap: 10px;
   }
 
+  .poll-card-wrap {
+    position: relative;
+  }
+
+  .dismiss-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    color: var(--staff);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.1s, color 0.1s;
+    z-index: 1;
+  }
+
+  .dismiss-btn:hover {
+    background: var(--staff);
+    color: var(--ink);
+  }
+
   .poll-row {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 16px 18px;
+    padding: 16px 40px 16px 18px;
     text-decoration: none;
     color: inherit;
     border: 1px solid var(--staff);
@@ -487,3 +522,55 @@ function fmtEarliest(dt: string | null) {
     }
   }
 </style>
+
+<script>
+  const STORAGE_KEY = "ct_hidden_polls";
+
+  function getHidden(): Set<string> {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveHidden(set: Set<string>) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
+  }
+
+  function applyHidden() {
+    const hidden = getHidden();
+    document.querySelectorAll<HTMLElement>(".poll-card-wrap[data-token]").forEach((el) => {
+      if (hidden.has(el.dataset.token!)) el.style.display = "none";
+    });
+  }
+
+  function dismissCard(wrap: HTMLElement) {
+    const token = wrap.dataset.token!;
+    // Animate out: slide up and fade
+    wrap.style.transition = "opacity 0.2s, transform 0.25s, max-height 0.3s, margin 0.3s";
+    wrap.style.overflow = "hidden";
+    wrap.style.maxHeight = wrap.offsetHeight + "px";
+    requestAnimationFrame(() => {
+      wrap.style.opacity = "0";
+      wrap.style.transform = "translateX(40px)";
+      wrap.style.maxHeight = "0";
+      wrap.style.marginBottom = "0";
+    });
+    wrap.addEventListener("transitionend", () => { wrap.style.display = "none"; }, { once: true });
+    const hidden = getHidden();
+    hidden.add(token);
+    saveHidden(hidden);
+  }
+
+  applyHidden();
+
+  document.querySelectorAll<HTMLButtonElement>(".dismiss-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = btn.closest<HTMLElement>(".poll-card-wrap");
+      if (wrap) dismissCard(wrap);
+    });
+  });
+</script>
