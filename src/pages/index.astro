@@ -45,13 +45,12 @@ function buildHeatDays(options: OptionData[], participantCount: number): HeatDay
   return [...days.entries()].map(([date, score]) => ({ date, score, max }));
 }
 
-function cellColor(score: number, max: number): string {
-  if (max === 0) return "#d4cfc6";
+function cellStyle(score: number, max: number): string {
+  if (max === 0 || score === 0) return "background:#fff;border:1px solid #d4cfc6;";
   const r = score / max;
-  if (r >= 0.66) return "#4ade80";
-  if (r >= 0.33) return "#a7f3d0";
-  if (r >  0)    return "#fb923c";
-  return "#d4cfc6";
+  if (r >= 0.66) return "background:#4ade80;";
+  if (r >= 0.33) return "background:#a7f3d0;";
+  return "background:#d4cfc6;";
 }
 
 function fmtChosen(dt: string | null): string | null {
@@ -189,7 +188,7 @@ if (user) {
                     : poll.heatDays.length > 0 && (
                         <div class="poll-row-heat">
                           {poll.heatDays.slice(0, 14).map(day => (
-                            <div class="heat-cell" style={`background:${cellColor(day.score, day.max)}`}></div>
+                            <div class="heat-cell" style={cellStyle(day.score, day.max)}></div>
                           ))}
                           {poll.heatDays.length > 14 && (
                             <span class="heat-more">+{poll.heatDays.length - 14}</span>
@@ -237,7 +236,7 @@ if (user) {
                   : poll.heatDays.length > 0 && (
                       <div class="poll-row-heat">
                         {poll.heatDays.slice(0, 14).map(day => (
-                          <div class="heat-cell" style={`background:${cellColor(day.score, day.max)}`}></div>
+                          <div class="heat-cell" style={cellStyle(day.score, day.max)}></div>
                         ))}
                         {poll.heatDays.length > 14 && (
                           <span class="heat-more">+{poll.heatDays.length - 14}</span>
