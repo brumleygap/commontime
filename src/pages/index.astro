@@ -19,7 +19,7 @@ type PollRow = {
 };
 
 type OptionData = { dt: string; yes: number; maybe: number };
-type HeatDay    = { date: string; score: number; max: number };
+type HeatDay    = { date: string; score: number; max: number; yes: number; maybe: number };
 
 type EnrichedPoll = PollRow & {
   heatDays: HeatDay[];
@@ -35,14 +35,27 @@ function parseOptions(raw: string | null): OptionData[] {
 }
 
 function buildHeatDays(options: OptionData[], participantCount: number): HeatDay[] {
-  const days = new Map<string, number>();
+  const days = new Map<string, { score: number; yes: number; maybe: number }>();
   for (const opt of options) {
     const date = opt.dt.slice(0, 10);
     const score = opt.yes * 2 + opt.maybe;
-    if ((days.get(date) ?? -1) < score) days.set(date, score);
+    const existing = days.get(date);
+    if (!existing || score > existing.score) days.set(date, { score, yes: opt.yes, maybe: opt.maybe });
   }
   const max = participantCount * 2;
-  return [...days.entries()].map(([date, score]) => ({ date, score, max }));
+  return [...days.entries()].map(([date, v]) => ({ date, max, ...v }));
+}
+
+function heatTip(day: HeatDay, participantCount: number): string {
+  const dateStr = new Date(day.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  if (participantCount === 0) return `${dateStr} · no participants yet`;
+  if (day.score === 0) return `${dateStr} · no one available`;
+  const parts: string[] = [];
+  if (day.yes > 0)   parts.push(`${day.yes} yes`);
+  if (day.maybe > 0) parts.push(`${day.maybe} maybe`);
+  const busy = participantCount - day.yes - day.maybe;
+  if (busy > 0) parts.push(`${busy} busy`);
+  return `${dateStr} · ${parts.join(", ")}`;
 }
 
 function cellStyle(score: number, max: number): string {
@@ -169,9 +182,11 @@ if (user) {
         <div class="poll-list">
           {myPolls.map((poll) => (
             <div class="poll-card-wrap" data-token={poll.token}>
-              <a href={`/poll/${poll.token}`} class={`poll-row${poll.is_creator ? " creator" : ""}`}>
+              <div class={`poll-row${poll.is_creator ? " creator" : ""}`}>
                 <div class="poll-row-body">
-                  <span class="poll-row-title">{poll.title}</span>
+                  <a href={`/poll/${poll.token}`} class="poll-title-link">
+                    <span class="poll-row-title">{poll.title}</span>
+                  </a>
                   <div class="poll-row-meta">
                     {poll.is_locked
                       ? <span class="status-badge locked">date set</span>
@@ -188,7 +203,7 @@ if (user) {
                     : poll.heatDays.length > 0 && (
                         <div class="poll-row-heat">
                           {poll.heatDays.slice(0, 14).map(day => (
-                            <div class="heat-cell" style={cellStyle(day.score, day.max)}></div>
+                            <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day, poll.participant_count)}></div>
                           ))}
                           {poll.heatDays.length > 14 && (
                             <span class="heat-more">+{poll.heatDays.length - 14}</span>
@@ -197,8 +212,7 @@ if (user) {
                       )
                   }
                 </div>
-                <span class="poll-row-arrow" aria-hidden="true">→</span>
-              </a>
+              </div>
               <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
             </div>
           ))}
@@ -218,9 +232,11 @@ if (user) {
       <div class="poll-list">
         {guestPolls.map((poll) => (
           <div class="poll-card-wrap" data-token={poll.token}>
-            <a href={`/poll/${poll.token}`} class="poll-row">
+            <div class="poll-row">
               <div class="poll-row-body">
-                <span class="poll-row-title">{poll.title}</span>
+                <a href={`/poll/${poll.token}`} class="poll-title-link">
+                  <span class="poll-row-title">{poll.title}</span>
+                </a>
                 <div class="poll-row-meta">
                   {poll.is_locked
                     ? <span class="status-badge locked">date set</span>
@@ -236,7 +252,7 @@ if (user) {
                   : poll.heatDays.length > 0 && (
                       <div class="poll-row-heat">
                         {poll.heatDays.slice(0, 14).map(day => (
-                          <div class="heat-cell" style={cellStyle(day.score, day.max)}></div>
+                          <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day, poll.participant_count)}></div>
                         ))}
                         {poll.heatDays.length > 14 && (
                           <span class="heat-more">+{poll.heatDays.length - 14}</span>
@@ -245,8 +261,7 @@ if (user) {
                     )
                 }
               </div>
-              <span class="poll-row-arrow" aria-hidden="true">→</span>
-            </a>
+            </div>
             <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
           </div>
         ))}
@@ -371,32 +386,31 @@ if (user) {
   }
 
   .poll-row {
-    display: flex;
-    align-items: center;
-    gap: 16px;
     padding: 16px 40px 16px 18px;
-    text-decoration: none;
-    color: inherit;
     border: 1px solid var(--staff);
     border-left: 3px solid var(--staff);
     background: #fff;
     box-shadow: 0 2px 6px rgba(15, 15, 14, 0.07), 0 1px 2px rgba(15, 15, 14, 0.04);
-    transition: background 0.12s, box-shadow 0.12s, transform 0.12s;
+    transition: background 0.12s, box-shadow 0.12s;
   }
 
   .poll-row.creator {
     border-left-color: var(--red);
   }
 
-  .poll-row:hover {
-    background: var(--day-bg);
-    box-shadow: 0 6px 16px rgba(15, 15, 14, 0.11), 0 2px 4px rgba(15, 15, 14, 0.06);
-    transform: translateY(-1px);
+  .poll-row-body {
+    min-width: 0;
   }
 
-  .poll-row-body {
-    flex: 1;
-    min-width: 0;
+  .poll-title-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+
+  .poll-title-link:hover .poll-row-title {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .poll-row-title {
@@ -455,19 +469,6 @@ if (user) {
     border: 1px solid var(--staff);
   }
 
-  .poll-row-arrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 14px;
-    color: var(--staff);
-    flex-shrink: 0;
-    transition: color 0.1s, transform 0.1s;
-  }
-
-  .poll-row:hover .poll-row-arrow {
-    color: var(--ink);
-    transform: translateX(2px);
-  }
-
   /* ── Heatmap ─────────────────────────────────────────────── */
   .poll-row-heat {
     display: flex;
@@ -489,6 +490,21 @@ if (user) {
     font-size: 10px;
     letter-spacing: 0.04em;
     color: var(--muted);
+  }
+
+  .heat-tooltip {
+    position: fixed;
+    background: var(--ink);
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 10px;
+    pointer-events: none;
+    z-index: 200;
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+    margin-top: -8px;
   }
 
   /* ── Chosen date (locked polls) ──────────────────────────── */
@@ -635,7 +651,7 @@ if (user) {
     }
 
     .poll-row {
-      padding: 14px 14px;
+      padding: 14px 36px 14px 14px;
     }
 
     .poll-row-title {
@@ -700,8 +716,28 @@ if (user) {
   }
 
   applyHidden();
-  // Re-apply on bfcache restore (tap-back on mobile)
   window.addEventListener("pageshow", applyHidden);
+
+  // ── Heat cell tooltip ──────────────────────────────────────
+  const tip = document.createElement("div");
+  tip.className = "heat-tooltip";
+  tip.style.display = "none";
+  document.body.appendChild(tip);
+
+  document.querySelectorAll<HTMLElement>(".heat-cell[data-tip]").forEach((cell) => {
+    cell.addEventListener("mouseenter", (e) => {
+      tip.textContent = cell.dataset.tip!;
+      tip.style.display = "block";
+      moveTip(e as MouseEvent);
+    });
+    cell.addEventListener("mousemove", (e) => moveTip(e as MouseEvent));
+    cell.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  });
+
+  function moveTip(e: MouseEvent) {
+    tip.style.left = e.clientX + "px";
+    tip.style.top  = (e.clientY - 6) + "px";
+  }
 
   document.querySelectorAll<HTMLButtonElement>(".dismiss-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
