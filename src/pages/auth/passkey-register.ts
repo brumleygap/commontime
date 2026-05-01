@@ -1,12 +1,13 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
-import { createRegistrationOptions, verifyRegistration, toBase64url } from "../../lib/webauthn";
 
 // GET /auth/passkey-register?email=...
 // Returns registration options JSON; stores challenge in DB
 export const GET: APIRoute = async ({ url }) => {
   try {
+    const { createRegistrationOptions } = await import("../../lib/webauthn");
+
     const email = url.searchParams.get("email")?.trim().toLowerCase();
     if (!email) {
       return Response.json({ error: "email required" }, { status: 400 });
@@ -55,7 +56,7 @@ export const GET: APIRoute = async ({ url }) => {
 
 // POST /auth/passkey-register
 // Verifies registration response, stores credential, creates session
-export const POST: APIRoute = async ({ request, cookies, redirect }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   let body: { response: RegistrationResponseJSON; userId: number };
   try {
     body = await request.json();
@@ -68,67 +69,67 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
     return Response.json({ error: "missing fields" }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const row = await env.DB
-    .prepare(
-      `SELECT id, challenge FROM webauthn_challenges
-       WHERE user_id = ? AND type = 'register' AND used = 0 AND expires_at > ?
-       ORDER BY id DESC LIMIT 1`
-    )
-    .bind(userId, now)
-    .first<{ id: number; challenge: string }>();
-
-  if (!row) {
-    return Response.json({ error: "challenge expired or not found" }, { status: 400 });
-  }
-
-  let verification;
   try {
-    verification = await verifyRegistration({
+    const { verifyRegistration, toBase64url } = await import("../../lib/webauthn");
+
+    const now = new Date().toISOString();
+    const row = await env.DB
+      .prepare(
+        `SELECT id, challenge FROM webauthn_challenges
+         WHERE user_id = ? AND type = 'register' AND used = 0 AND expires_at > ?
+         ORDER BY id DESC LIMIT 1`
+      )
+      .bind(userId, now)
+      .first<{ id: number; challenge: string }>();
+
+    if (!row) {
+      return Response.json({ error: "challenge expired or not found" }, { status: 400 });
+    }
+
+    const verification = await verifyRegistration({
       response,
       expectedChallenge: row.challenge,
       requestUrl: request.url,
     });
-  } catch (err) {
-    console.error("passkey registration verification failed", err);
-    return Response.json({ error: "verification failed" }, { status: 400 });
+
+    if (!verification.verified || !verification.registrationInfo) {
+      return Response.json({ error: "not verified" }, { status: 400 });
+    }
+
+    await env.DB
+      .prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?")
+      .bind(row.id)
+      .run();
+
+    const { credential } = verification.registrationInfo;
+    const credentialId = credential.id;
+    const publicKey = toBase64url(credential.publicKey);
+
+    await env.DB
+      .prepare(
+        "INSERT INTO passkey_credentials (user_id, credential_id, public_key, sign_count) VALUES (?, ?, ?, ?)"
+      )
+      .bind(userId, credentialId, publicKey, credential.counter)
+      .run();
+
+    const sessionToken = crypto.randomUUID().replace(/-/g, "");
+    const sessionExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await env.DB
+      .prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)")
+      .bind(userId, sessionToken, sessionExpiry.toISOString())
+      .run();
+
+    cookies.set("session", sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      expires: sessionExpiry,
+      path: "/",
+    });
+
+    return Response.json({ ok: true });
+  } catch (err: any) {
+    console.error("passkey-register POST error:", err);
+    return Response.json({ error: err?.message ?? "internal error" }, { status: 500 });
   }
-
-  if (!verification.verified || !verification.registrationInfo) {
-    return Response.json({ error: "not verified" }, { status: 400 });
-  }
-
-  await env.DB
-    .prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?")
-    .bind(row.id)
-    .run();
-
-  const { credential } = verification.registrationInfo;
-  const credentialId = credential.id; // already base64url from simplewebauthn
-  const publicKey = toBase64url(credential.publicKey);
-
-  await env.DB
-    .prepare(
-      "INSERT INTO passkey_credentials (user_id, credential_id, public_key, sign_count) VALUES (?, ?, ?, ?)"
-    )
-    .bind(userId, credentialId, publicKey, credential.counter)
-    .run();
-
-  // Create session
-  const sessionToken = crypto.randomUUID().replace(/-/g, "");
-  const sessionExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await env.DB
-    .prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)")
-    .bind(userId, sessionToken, sessionExpiry.toISOString())
-    .run();
-
-  cookies.set("session", sessionToken, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    expires: sessionExpiry,
-    path: "/",
-  });
-
-  return Response.json({ ok: true });
 };
