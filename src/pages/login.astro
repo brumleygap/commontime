@@ -34,12 +34,20 @@ const errorMessages: Record<string, string> = {
           {errorParam && errorMessages[errorParam] && (
             <div class="error-banner">{errorMessages[errorParam]}</div>
           )}
-          {result?.error && (
-            <div class="error-banner">{result.error.message}</div>
-          )}
+
+          <!-- Passkey error injected by client JS -->
+          <div id="passkey-error" class="error-banner" style="display:none;"></div>
 
           <div class="login-card">
-            <form method="POST" action={actions.sendMagicLink}>
+            <!-- Primary: discoverable passkey sign-in (no email needed) -->
+            <button id="passkey-btn" type="button" class="ct-btn passkey-primary-btn">
+              Sign in with Face ID / Touch ID
+            </button>
+
+            <div class="divider"><span>or use your email</span></div>
+
+            <!-- Secondary: email for magic link or passkey registration -->
+            <form id="email-form" method="POST" action={actions.sendMagicLink}>
               <div class="field-group">
                 <label for="email" class="field-label">Email address</label>
                 <input
@@ -47,18 +55,24 @@ const errorMessages: Record<string, string> = {
                   name="email"
                   type="email"
                   required
-                  autofocus
-                  autocomplete="email"
+                  autocomplete="email webauthn"
                   placeholder="you@example.com"
                   class="field-input"
                 />
               </div>
 
-              <p class="hint-text">We'll send a one-click login link — no password needed.</p>
+              {result?.error && (
+                <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
+              )}
 
-              <button type="submit" class="ct-btn" style="width:100%;justify-content:center;">
-                Send magic link ♩
-              </button>
+              <div class="email-actions">
+                <button id="register-passkey-btn" type="button" class="ct-btn" style="flex:1;justify-content:center;">
+                  Set up Face ID
+                </button>
+                <button type="submit" class="magic-link-btn">
+                  Email me a link
+                </button>
+              </div>
             </form>
           </div>
         </>
@@ -66,6 +80,115 @@ const errorMessages: Record<string, string> = {
     </div>
   </section>
 </BaseLayout>
+
+<script>
+  import {
+    startRegistration,
+    startAuthentication,
+    browserSupportsWebAuthn,
+  } from "@simplewebauthn/browser";
+
+  const passkeyBtn = document.getElementById("passkey-btn") as HTMLButtonElement | null;
+  const registerBtn = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
+  const emailInput = document.getElementById("email") as HTMLInputElement | null;
+  const errorBox = document.getElementById("passkey-error") as HTMLDivElement | null;
+
+  function showError(msg: string) {
+    if (!errorBox) return;
+    errorBox.textContent = msg;
+    errorBox.style.display = "block";
+    errorBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function clearError() {
+    if (!errorBox) return;
+    errorBox.style.display = "none";
+    errorBox.textContent = "";
+  }
+
+  // Hide passkey buttons on unsupported browsers
+  if (!browserSupportsWebAuthn()) {
+    if (passkeyBtn) passkeyBtn.style.display = "none";
+    const divider = document.querySelector(".divider") as HTMLElement | null;
+    if (divider) divider.style.display = "none";
+    if (registerBtn) registerBtn.style.display = "none";
+  }
+
+  // Discoverable sign-in — no email required
+  passkeyBtn?.addEventListener("click", async () => {
+    clearError();
+    passkeyBtn.disabled = true;
+    passkeyBtn.textContent = "Waiting for biometric…";
+
+    try {
+      const optionsRes = await fetch("/auth/passkey-authenticate");
+      if (!optionsRes.ok) throw new Error("Could not start sign-in.");
+      const options = await optionsRes.json();
+
+      const assertion = await startAuthentication({ optionsJSON: options });
+
+      const verifyRes = await fetch("/auth/passkey-authenticate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assertion),
+      });
+
+      const data = await verifyRes.json();
+      if (data.ok) {
+        window.location.href = "/";
+      } else {
+        throw new Error(data.error ?? "Sign-in failed.");
+      }
+    } catch (err: any) {
+      // NotAllowedError = user cancelled — not an app error
+      if (err?.name !== "NotAllowedError") {
+        showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
+      }
+      passkeyBtn.disabled = false;
+      passkeyBtn.textContent = "Sign in with Face ID / Touch ID";
+    }
+  });
+
+  // Register a new passkey tied to an email
+  registerBtn?.addEventListener("click", async () => {
+    const email = emailInput?.value.trim();
+    if (!email) {
+      emailInput?.focus();
+      showError("Enter your email address first.");
+      return;
+    }
+    clearError();
+    registerBtn.disabled = true;
+    registerBtn.textContent = "Waiting for biometric…";
+
+    try {
+      const optionsRes = await fetch(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
+      if (!optionsRes.ok) throw new Error("Could not start registration.");
+      const { options, userId } = await optionsRes.json();
+
+      const attestation = await startRegistration({ optionsJSON: options });
+
+      const verifyRes = await fetch("/auth/passkey-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: attestation, userId }),
+      });
+
+      const data = await verifyRes.json();
+      if (data.ok) {
+        window.location.href = "/";
+      } else {
+        throw new Error(data.error ?? "Registration failed.");
+      }
+    } catch (err: any) {
+      if (err?.name !== "NotAllowedError") {
+        showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
+      }
+      registerBtn.disabled = false;
+      registerBtn.textContent = "Set up Face ID";
+    }
+  });
+</script>
 
 <style>
   .login-title {
@@ -87,6 +210,34 @@ const errorMessages: Record<string, string> = {
     border: 1px solid var(--staff);
     border-top: 3px solid var(--red);
     padding: 28px 24px;
+  }
+
+  .passkey-primary-btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 15px;
+    padding: 14px 20px;
+    min-height: 52px;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--staff);
   }
 
   .check-banner {
@@ -155,11 +306,28 @@ const errorMessages: Record<string, string> = {
     color: var(--placeholder);
   }
 
-  .hint-text {
-    font-family: 'Libre Baskerville', serif;
-    font-size: 15px;
-    font-style: italic;
+  .email-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .magic-link-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
     color: var(--muted);
-    margin-bottom: 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 10px 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .magic-link-btn:hover {
+    color: var(--ink);
   }
 </style>
