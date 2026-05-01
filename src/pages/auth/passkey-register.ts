@@ -1,13 +1,12 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
+import { createRegistrationOptions, verifyRegistration, toBase64url } from "../../lib/webauthn";
 
 // GET /auth/passkey-register?email=...
 // Returns registration options JSON; stores challenge in DB
 export const GET: APIRoute = async ({ url }) => {
   try {
-    const { createRegistrationOptions } = await import("../../lib/webauthn");
-
     const email = url.searchParams.get("email")?.trim().toLowerCase();
     if (!email) {
       return Response.json({ error: "email required" }, { status: 400 });
@@ -57,20 +56,13 @@ export const GET: APIRoute = async ({ url }) => {
 // POST /auth/passkey-register
 // Verifies registration response, stores credential, creates session
 export const POST: APIRoute = async ({ request, cookies }) => {
-  let body: { response: RegistrationResponseJSON; userId: number };
   try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "invalid JSON" }, { status: 400 });
-  }
+    const body: { response: RegistrationResponseJSON; userId: number } = await request.json();
+    const { response, userId } = body;
 
-  const { response, userId } = body;
-  if (!response || !userId) {
-    return Response.json({ error: "missing fields" }, { status: 400 });
-  }
-
-  try {
-    const { verifyRegistration, toBase64url } = await import("../../lib/webauthn");
+    if (!response || !userId) {
+      return Response.json({ error: "missing fields" }, { status: 400 });
+    }
 
     const now = new Date().toISOString();
     const row = await env.DB
@@ -102,14 +94,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       .run();
 
     const { credential } = verification.registrationInfo;
-    const credentialId = credential.id;
-    const publicKey = toBase64url(credential.publicKey);
-
     await env.DB
       .prepare(
         "INSERT INTO passkey_credentials (user_id, credential_id, public_key, sign_count) VALUES (?, ?, ?, ?)"
       )
-      .bind(userId, credentialId, publicKey, credential.counter)
+      .bind(userId, credential.id, toBase64url(credential.publicKey), credential.counter)
       .run();
 
     const sessionToken = crypto.randomUUID().replace(/-/g, "");

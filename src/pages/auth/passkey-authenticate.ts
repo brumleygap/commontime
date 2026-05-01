@@ -1,12 +1,12 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
+import { createAuthenticationOptions, verifyAuthentication } from "../../lib/webauthn";
 
 // GET /auth/passkey-authenticate
 // Returns authentication options JSON (discoverable — no user ID needed)
 export const GET: APIRoute = async ({ url }) => {
   try {
-    const { createAuthenticationOptions } = await import("../../lib/webauthn");
     const options = await createAuthenticationOptions(url.toString());
 
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
@@ -27,15 +27,8 @@ export const GET: APIRoute = async ({ url }) => {
 // POST /auth/passkey-authenticate
 // Verifies authentication assertion, creates session
 export const POST: APIRoute = async ({ request, cookies }) => {
-  let response: AuthenticationResponseJSON;
   try {
-    response = await request.json();
-  } catch {
-    return Response.json({ error: "invalid JSON" }, { status: 400 });
-  }
-
-  try {
-    const { verifyAuthentication } = await import("../../lib/webauthn");
+    const response: AuthenticationResponseJSON = await request.json();
     const now = new Date().toISOString();
     const credentialId = response.id;
 
