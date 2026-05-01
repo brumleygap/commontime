@@ -48,9 +48,9 @@ function buildHeatDays(options: OptionData[], participantCount: number): HeatDay
 function cellColor(score: number, max: number): string {
   if (max === 0) return "#d4cfc6";
   const r = score / max;
-  if (r >= 0.66) return "#166534";
-  if (r >= 0.33) return "#4ade80";
-  if (r >  0)    return "#d97706";
+  if (r >= 0.66) return "#4ade80";
+  if (r >= 0.33) return "#a7f3d0";
+  if (r >  0)    return "#fb923c";
   return "#d4cfc6";
 }
 
