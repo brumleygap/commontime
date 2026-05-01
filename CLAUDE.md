@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Debugging visual and layout bugs
+
+Before writing any code to fix a visual bug, establish what is actually happening:
+
+1. **State assumptions explicitly** — identify what evidence would confirm or refute each one before touching anything.
+2. **Measure first** — deploy a diagnostic (log, overlay, DevTools snippet) to collect real data from the affected environment. For viewport/display issues this means `window.innerWidth`, `document.documentElement.scrollWidth`, and `window.visualViewport?.scale` at minimum.
+3. **One change at a time** — make at most one speculative change, then require evidence it helped before making another.
+
+The canonical failure mode is making several CSS changes based on guesses, none of which address the real cause. The diagnostic overlay pattern (a `position:fixed` element that prints live measurements) is cheap to deploy and immediately distinguishes browser-level issues (wrong viewport, desktop-mode, zoom setting) from CSS issues.
+
 ## Commands
 
 ```bash
