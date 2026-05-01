@@ -10,6 +10,17 @@ import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simp
 
 export type { VerifiedRegistrationResponse, VerifiedAuthenticationResponse };
 
+export function toBase64url(buf: Uint8Array): string {
+  return btoa(String.fromCharCode(...buf))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+function fromBase64url(str: string): Uint8Array {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, "=");
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
 export function getRpId(requestUrl: string): string {
   return new URL(requestUrl).hostname;
 }
@@ -80,7 +91,7 @@ export async function verifyAuthentication(opts: {
     expectedRPID: getRpId(opts.requestUrl),
     credential: {
       id: opts.credential.credentialId,
-      publicKey: Buffer.from(opts.credential.publicKey, "base64url"),
+      publicKey: fromBase64url(opts.credential.publicKey),
       counter: opts.credential.signCount,
     },
     requireUserVerification: false,

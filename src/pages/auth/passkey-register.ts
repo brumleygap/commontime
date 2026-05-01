@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
-import { createRegistrationOptions, verifyRegistration } from "../../lib/webauthn";
+import { createRegistrationOptions, verifyRegistration, toBase64url } from "../../lib/webauthn";
 
 // GET /auth/passkey-register?email=...
 // Returns registration options JSON; stores challenge in DB
@@ -35,7 +35,7 @@ export const GET: APIRoute = async ({ url }) => {
   const options = await createRegistrationOptions({
     userId: user.id,
     userEmail: user.email,
-    existingCredentialIds: existing.results.map((r) => r.credential_id),
+    existingCredentialIds: existing.results.map((r: { credential_id: string }) => r.credential_id),
     requestUrl: url.toString(),
   });
 
@@ -99,8 +99,8 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
     .run();
 
   const { credential } = verification.registrationInfo;
-  const credentialId = Buffer.from(credential.id).toString("base64url");
-  const publicKey = Buffer.from(credential.publicKey).toString("base64url");
+  const credentialId = credential.id; // already base64url from simplewebauthn
+  const publicKey = toBase64url(credential.publicKey);
 
   await env.DB
     .prepare(
