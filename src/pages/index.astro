@@ -112,7 +112,7 @@ function fmtEarliest(dt: string | null) {
                       : poll.is_open
                         ? <span class="status-badge open">open</span>
                         : <span class="status-badge past">past</span>}
-                    {poll.is_creator ? <span class="badge">yours</span> : null}
+                    {poll.is_creator ? <span class="badge">Your Poll</span> : null}
                     <span>{poll.responded_count} / {poll.participant_count} responded</span>
                     {poll.earliest_option && (
                       <span>starts {fmtEarliest(poll.earliest_option)}</span>
@@ -335,8 +335,8 @@ function fmtEarliest(dt: string | null) {
     font-size: 12px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: #1d4ed8;
+    border: 1px solid #1d4ed8;
     padding: 2px 7px;
   }
 
@@ -354,8 +354,8 @@ function fmtEarliest(dt: string | null) {
   }
 
   .status-badge.locked {
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: var(--ink);
+    border: 1px solid var(--ink);
   }
 
   .status-badge.past {
