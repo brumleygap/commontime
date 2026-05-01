@@ -491,7 +491,7 @@ if (user) {
   }
 
   .heat-tooltip {
-    position: absolute;
+    position: fixed;
     background: var(--ink);
     color: #fff;
     font-family: 'DM Mono', monospace;
@@ -727,7 +727,7 @@ if (user) {
       tip.style.display = "block";
       const r = cell.getBoundingClientRect();
       tip.style.left = (r.left + r.width / 2) + "px";
-      tip.style.top  = (r.top + window.scrollY - 8) + "px";
+      tip.style.top  = (r.top - 8) + "px";
     });
     cell.addEventListener("mouseleave", () => { tip.style.display = "none"; });
   });
