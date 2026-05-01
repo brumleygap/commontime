@@ -39,14 +39,7 @@ const errorMessages: Record<string, string> = {
           <div id="passkey-error" class="error-banner" style="display:none;"></div>
 
           <div class="login-card">
-            <!-- Primary: discoverable passkey sign-in (no email needed) -->
-            <button id="passkey-btn" type="button" class="ct-btn passkey-primary-btn">
-              Sign in with a passkey
-            </button>
-
-            <div class="divider"><span>or use your email</span></div>
-
-            <!-- Secondary: email for magic link or passkey registration -->
+            <!-- Primary: email flow (works for everyone) -->
             <div class="field-group">
               <label for="email" class="field-label">Email address</label>
               <input
@@ -56,6 +49,7 @@ const errorMessages: Record<string, string> = {
                 autocomplete="email webauthn"
                 placeholder="you@example.com"
                 class="field-input"
+                autofocus
               />
               <p class="email-hint">Enter your email, then create a passkey or get a link.</p>
             </div>
@@ -74,6 +68,14 @@ const errorMessages: Record<string, string> = {
                 Email me a link instead
               </button>
             </form>
+
+            <!-- Secondary: discoverable passkey sign-in (only useful if passkey already exists) -->
+            <div id="passkey-section" class="passkey-section" style="display:none;">
+              <div class="divider"><span>or</span></div>
+              <button id="passkey-btn" type="button" class="passkey-link-btn">
+                Sign in with a passkey
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -152,11 +154,11 @@ const errorMessages: Record<string, string> = {
     }
   }
 
-  // Hide passkey buttons on unsupported browsers
-  if (!browserSupportsWebAuthn()) {
-    if (passkeyBtn) passkeyBtn.style.display = "none";
-    const divider = document.querySelector(".divider") as HTMLElement | null;
-    if (divider) divider.style.display = "none";
+  // Show passkey sign-in section only on browsers that support WebAuthn
+  const passkeySection = document.getElementById("passkey-section") as HTMLElement | null;
+  if (browserSupportsWebAuthn()) {
+    if (passkeySection) passkeySection.style.display = "block";
+  } else {
     if (registerBtn) registerBtn.style.display = "none";
   }
 
@@ -249,12 +251,28 @@ const errorMessages: Record<string, string> = {
     padding: 28px 24px;
   }
 
-  .passkey-primary-btn {
+  .passkey-section {
+    margin-top: 4px;
+  }
+
+  .passkey-link-btn {
     width: 100%;
-    justify-content: center;
-    font-size: 15px;
-    padding: 14px 20px;
-    min-height: 52px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 10px 0;
+    text-align: center;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+  }
+
+  .passkey-link-btn:hover {
+    color: var(--ink);
   }
 
   .divider {
