@@ -8,16 +8,86 @@ type PollRow = {
   token: string;
   title: string;
   created_at: string;
-  is_creator: number;  // 1 | 0
-  is_locked: number;   // 1 if chosen_option_id is set
-  is_open: number;     // 1 if any option_datetime is in the future (and not locked)
+  is_creator: number;
+  is_locked: number;
+  is_open: number;
   participant_count: number;
   responded_count: number;
-  earliest_option: string | null;
+  // "YYYY-MM-DDTHH:MM|yesCount|maybeCount~..." one entry per option, sorted by datetime
+  options_data: string | null;
+  chosen_datetime: string | null;
 };
 
-let myPolls: PollRow[] = [];
-let guestPolls: PollRow[] = [];
+type OptionData = { dt: string; yes: number; maybe: number };
+type HeatDay    = { date: string; score: number; max: number };
+
+type EnrichedPoll = PollRow & {
+  heatDays: HeatDay[];
+  chosenFormatted: string | null;
+};
+
+function parseOptions(raw: string | null): OptionData[] {
+  if (!raw) return [];
+  return raw.split("~").map(part => {
+    const [dt, yes, maybe] = part.split("|");
+    return { dt: dt ?? "", yes: parseInt(yes) || 0, maybe: parseInt(maybe) || 0 };
+  });
+}
+
+function buildHeatDays(options: OptionData[], participantCount: number): HeatDay[] {
+  const days = new Map<string, number>();
+  for (const opt of options) {
+    const date = opt.dt.slice(0, 10);
+    const score = opt.yes * 2 + opt.maybe;
+    if ((days.get(date) ?? -1) < score) days.set(date, score);
+  }
+  const max = participantCount * 2;
+  return [...days.entries()].map(([date, score]) => ({ date, score, max }));
+}
+
+function cellColor(score: number, max: number): string {
+  if (max === 0) return "#d4cfc6";
+  const r = score / max;
+  if (r >= 0.66) return "#166534";
+  if (r >= 0.33) return "#4ade80";
+  if (r >  0)    return "#d97706";
+  return "#d4cfc6";
+}
+
+function fmtChosen(dt: string | null): string | null {
+  if (!dt) return null;
+  const d = new Date(dt);
+  return (
+    d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) +
+    " · " +
+    d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  );
+}
+
+function enrich(p: PollRow): EnrichedPoll {
+  return {
+    ...p,
+    heatDays: buildHeatDays(parseOptions(p.options_data), p.participant_count),
+    chosenFormatted: fmtChosen(p.chosen_datetime),
+  };
+}
+
+// Subquery fragments reused in both queries
+const OPTIONS_DATA_SQL = `
+  (SELECT GROUP_CONCAT(
+      po.option_datetime || '|' ||
+      CAST(COALESCE((SELECT COUNT(*) FROM votes WHERE option_id = po.id AND availability = 1), 0) AS TEXT) || '|' ||
+      CAST(COALESCE((SELECT COUNT(*) FROM votes WHERE option_id = po.id AND availability = 2), 0) AS TEXT),
+      '~'
+    ) FROM poll_options po WHERE po.poll_id = p.id ORDER BY po.option_datetime
+  ) AS options_data`;
+
+const CHOSEN_DT_SQL = `
+  (SELECT po.option_datetime FROM poll_options po WHERE po.id = p.chosen_option_id
+  ) AS chosen_datetime`;
+
+let myPolls: EnrichedPoll[] = [];
+let guestPolls: EnrichedPoll[] = [];
 
 if (user) {
   const { results } = await env.DB
@@ -34,7 +104,8 @@ if (user) {
           FROM participants par
           WHERE par.poll_id = p.id
             AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
-         (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+         ${OPTIONS_DATA_SQL},
+         ${CHOSEN_DT_SQL}
        FROM polls p
        WHERE (p.creator_id = ?
           OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?))
@@ -44,7 +115,7 @@ if (user) {
     )
     .bind(user.id, user.id, user.id, user.id)
     .all<PollRow>();
-  myPolls = results;
+  myPolls = results.map(enrich);
 } else {
   const guestCookie = Astro.cookies.get("recent_polls")?.value ?? "";
   const guestTokens = guestCookie ? guestCookie.split(",").filter(Boolean) : [];
@@ -64,20 +135,16 @@ if (user) {
             FROM participants par
             WHERE par.poll_id = p.id
               AND EXISTS(SELECT 1 FROM votes v WHERE v.participant_id = par.id)) AS responded_count,
-           (SELECT MIN(option_datetime) FROM poll_options WHERE poll_id = p.id) AS earliest_option
+           ${OPTIONS_DATA_SQL},
+           ${CHOSEN_DT_SQL}
          FROM polls p
          WHERE p.token IN (${placeholders})
          ORDER BY p.created_at DESC`
       )
       .bind(...guestTokens)
       .all<PollRow>();
-    guestPolls = results;
+    guestPolls = results.map(enrich);
   }
-}
-
-function fmtEarliest(dt: string | null) {
-  if (!dt) return null;
-  return new Date(dt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 ---
 
@@ -114,10 +181,22 @@ function fmtEarliest(dt: string | null) {
                         : <span class="status-badge past">past</span>}
                     {poll.is_creator ? <span class="badge">Your Poll</span> : null}
                     <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                    {poll.earliest_option && (
-                      <span>starts {fmtEarliest(poll.earliest_option)}</span>
-                    )}
                   </div>
+                  {poll.is_locked
+                    ? poll.chosenFormatted && (
+                        <div class="poll-row-chosen">{poll.chosenFormatted}</div>
+                      )
+                    : poll.heatDays.length > 0 && (
+                        <div class="poll-row-heat">
+                          {poll.heatDays.slice(0, 14).map(day => (
+                            <div class="heat-cell" style={`background:${cellColor(day.score, day.max)}`}></div>
+                          ))}
+                          {poll.heatDays.length > 14 && (
+                            <span class="heat-more">+{poll.heatDays.length - 14}</span>
+                          )}
+                        </div>
+                      )
+                  }
                 </div>
                 <span class="poll-row-arrow" aria-hidden="true">→</span>
               </a>
@@ -144,14 +223,28 @@ function fmtEarliest(dt: string | null) {
               <div class="poll-row-body">
                 <span class="poll-row-title">{poll.title}</span>
                 <div class="poll-row-meta">
-                  {poll.is_open
-                    ? <span class="status-badge open">open</span>
-                    : <span class="status-badge past">past</span>}
+                  {poll.is_locked
+                    ? <span class="status-badge locked">date set</span>
+                    : poll.is_open
+                      ? <span class="status-badge open">open</span>
+                      : <span class="status-badge past">past</span>}
                   <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                  {poll.earliest_option && (
-                    <span>from {fmtEarliest(poll.earliest_option)}</span>
-                  )}
                 </div>
+                {poll.is_locked
+                  ? poll.chosenFormatted && (
+                      <div class="poll-row-chosen">{poll.chosenFormatted}</div>
+                    )
+                  : poll.heatDays.length > 0 && (
+                      <div class="poll-row-heat">
+                        {poll.heatDays.slice(0, 14).map(day => (
+                          <div class="heat-cell" style={`background:${cellColor(day.score, day.max)}`}></div>
+                        ))}
+                        {poll.heatDays.length > 14 && (
+                          <span class="heat-more">+{poll.heatDays.length - 14}</span>
+                        )}
+                      </div>
+                    )
+                }
               </div>
               <span class="poll-row-arrow" aria-hidden="true">→</span>
             </a>
@@ -374,6 +467,38 @@ function fmtEarliest(dt: string | null) {
   .poll-row:hover .poll-row-arrow {
     color: var(--ink);
     transform: translateX(2px);
+  }
+
+  /* ── Heatmap ─────────────────────────────────────────────── */
+  .poll-row-heat {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    margin-top: 8px;
+  }
+
+  .heat-cell {
+    width: 8px;
+    height: 16px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .heat-more {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  /* ── Chosen date (locked polls) ──────────────────────────── */
+  .poll-row-chosen {
+    margin-top: 7px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
   }
 
   /* ── Empty state ─────────────────────────────────────────── */
