@@ -504,6 +504,21 @@ if (user) {
     transform: translate(-50%, -100%);
   }
 
+  :global(.heat-panel) {
+    position: fixed;
+    right: 16px;
+    background: var(--ink);
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    line-height: 2;
+    padding: 10px 14px;
+    z-index: 300;
+    min-width: 170px;
+    pointer-events: none;
+  }
+
   /* ── Chosen date (locked polls) ──────────────────────────── */
   .poll-row-chosen {
     margin-top: 7px;
@@ -715,29 +730,62 @@ if (user) {
   applyHidden();
   window.addEventListener("pageshow", applyHidden);
 
-  // ── Heat cell tooltip (anchored above cell) ────────────────
-  const tip = document.createElement("div");
-  tip.className = "heat-tooltip";
-  tip.style.display = "none";
-  document.body.appendChild(tip);
+  const isTouch = window.matchMedia("(pointer: coarse)").matches;
 
-  document.querySelectorAll<HTMLElement>(".heat-cell[data-tip]").forEach((cell) => {
-    cell.addEventListener("mouseenter", () => {
-      tip.textContent = cell.dataset.tip!;
-      tip.style.display = "block";
-      const r = cell.getBoundingClientRect();
-      tip.style.left = (r.left + r.width / 2) + "px";
-      tip.style.top  = (r.top - 8) + "px";
+  // ── Desktop: per-cell hover tooltip ────────────────────────
+  if (!isTouch) {
+    const tip = document.createElement("div");
+    tip.className = "heat-tooltip";
+    tip.style.display = "none";
+    document.body.appendChild(tip);
+
+    document.querySelectorAll<HTMLElement>(".heat-cell[data-tip]").forEach((cell) => {
+      cell.addEventListener("mouseenter", () => {
+        tip.textContent = cell.dataset.tip!;
+        tip.style.display = "block";
+        const r = cell.getBoundingClientRect();
+        tip.style.left = (r.left + r.width / 2) + "px";
+        tip.style.top  = (r.top - 8) + "px";
+      });
+      cell.addEventListener("mouseleave", () => { tip.style.display = "none"; });
     });
-    cell.addEventListener("mouseleave", () => { tip.style.display = "none"; });
-  });
+  }
+
+  // ── Mobile: tap whole heatmap row → panel on right side ────
+  if (isTouch) {
+    const panel = document.createElement("div");
+    panel.className = "heat-panel";
+    panel.style.display = "none";
+    document.body.appendChild(panel);
+
+    document.querySelectorAll<HTMLElement>(".poll-row-heat").forEach((heat) => {
+      heat.style.cursor = "pointer";
+      heat.addEventListener("click", (e) => {
+        e.stopPropagation(); // prevent card navigation
+        const tips = [...heat.querySelectorAll<HTMLElement>(".heat-cell[data-tip]")]
+          .map(c => c.dataset.tip!);
+        panel.innerHTML = "";
+        tips.forEach(t => {
+          const row = document.createElement("div");
+          row.textContent = t;
+          panel.appendChild(row);
+        });
+        const r = heat.getBoundingClientRect();
+        panel.style.top = Math.max(60, r.top - 4) + "px";
+        panel.style.display = "block";
+      });
+    });
+
+    // Dismiss on any tap outside the heatmap
+    document.addEventListener("click", () => { panel.style.display = "none"; });
+  }
 
   // ── Click anywhere on card to navigate ─────────────────────
   document.querySelectorAll<HTMLElement>(".poll-card-wrap[data-token]").forEach((wrap) => {
     wrap.style.cursor = "pointer";
     wrap.addEventListener("click", (e) => {
       const t = e.target as HTMLElement;
-      if (t.closest(".dismiss-btn") || t.closest("a")) return;
+      if (t.closest(".dismiss-btn") || t.closest("a") || t.closest(".poll-row-heat")) return;
       window.location.href = `/poll/${wrap.dataset.token}`;
     });
   });
