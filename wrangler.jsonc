@@ -1,9 +1,9 @@
 {
-  // "main" must point to an existing file at build-config-resolution time
-  // (the Cloudflare Vite plugin validates it before the build output exists).
-  // The actual Worker entry point (dist/server/entry.mjs) is used by
-  // wrangler deploy via the generated dist/server/wrangler.json.
-  "main": "@astrojs/cloudflare/entrypoints/server",
+  // Custom worker entry that wraps the Astro fetch handler and adds a
+  // scheduled handler for cron cleanup. @astrojs/cloudflare/handler provides
+  // the Astro fetch handler; the adapter still generates dist/server/wrangler.json
+  // which wrangler deploy uses for the final entry point.
+  "main": "./src/worker.ts",
   "name": "commontime",
   "compatibility_date": "2026-01-02",
   "compatibility_flags": [
@@ -17,6 +17,9 @@
   },
   "observability": {
     "enabled": true
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
   },
   "services": [
     {
