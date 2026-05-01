@@ -3,10 +3,10 @@ import { handle } from "@astrojs/cloudflare/handler";
 export default {
   fetch: handle,
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     ctx.waitUntil(runCleanup(env));
   },
-} satisfies ExportedHandler<Env>;
+};
 
 async function runCleanup(env: Env) {
   const now = new Date().toISOString();
