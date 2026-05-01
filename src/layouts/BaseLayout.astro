@@ -20,28 +20,9 @@ const { title = "CommonTime" } = Astro.props;
   </head>
   <body class="antialiased min-h-screen flex flex-col">
     <AppHeader />
-    <main class="flex-1 overflow-x-hidden">
+    <main class="flex-1">
       <slot />
     </main>
     <AppFooter />
-    <div id="vp-dbg" style="position:fixed;bottom:0;left:0;right:0;z-index:9999;background:rgba(0,0,0,0.82);color:#fff;font-family:monospace;font-size:14px;padding:6px 10px;line-height:1.4;"></div>
-    <script>
-      const dbg = document.getElementById('vp-dbg');
-      function upd() {
-        const vw = window.innerWidth;
-        const sw = document.documentElement.scrollWidth;
-        const dpr = window.devicePixelRatio.toFixed(2);
-        const scale = (window.visualViewport?.scale ?? 1).toFixed(3);
-        dbg.textContent = `vw:${vw} sw:${sw} dpr:${dpr} scale:${scale} | widest:`;
-        let max = 0, tag = '', cls = '';
-        document.querySelectorAll('*').forEach(e => {
-          const r = e.getBoundingClientRect().right;
-          if (r > max) { max = r; tag = e.tagName; cls = (e.className||'').toString().slice(0,40); }
-        });
-        dbg.textContent += `${max.toFixed(0)}px <${tag} "${cls}">`;
-      }
-      upd();
-      window.visualViewport?.addEventListener('resize', upd);
-    </script>
   </body>
 </html>
