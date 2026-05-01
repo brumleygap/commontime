@@ -47,32 +47,31 @@ const errorMessages: Record<string, string> = {
             <div class="divider"><span>or use your email</span></div>
 
             <!-- Secondary: email for magic link or passkey registration -->
-            <form id="email-form" method="POST" action={actions.sendMagicLink}>
-              <div class="field-group">
-                <label for="email" class="field-label">Email address</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autocomplete="email webauthn"
-                  placeholder="you@example.com"
-                  class="field-input"
-                />
-              </div>
+            <div class="field-group">
+              <label for="email" class="field-label">Email address</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autocomplete="email webauthn"
+                placeholder="you@example.com"
+                class="field-input"
+              />
+            </div>
 
-              {result?.error && (
-                <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
-              )}
+            {result?.error && (
+              <div class="error-banner" style="margin-bottom:16px;">{result.error.message}</div>
+            )}
 
-              <div class="email-actions">
-                <button id="register-passkey-btn" type="button" class="ct-btn" style="flex:1;justify-content:center;">
-                  Set up Face ID
-                </button>
-                <button type="submit" class="magic-link-btn">
-                  Email me a link
-                </button>
-              </div>
+            <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;">
+              Set up Face ID
+            </button>
+
+            <form id="email-form" method="POST" action={actions.sendMagicLink} style="margin-top:12px;">
+              <input type="hidden" id="email-hidden" name="email" value="" />
+              <button type="submit" class="magic-link-btn" style="width:100%;text-align:center;">
+                Email me a link instead
+              </button>
             </form>
           </div>
         </>
@@ -91,7 +90,21 @@ const errorMessages: Record<string, string> = {
   const passkeyBtn = document.getElementById("passkey-btn") as HTMLButtonElement | null;
   const registerBtn = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
   const emailInput = document.getElementById("email") as HTMLInputElement | null;
+  const emailHidden = document.getElementById("email-hidden") as HTMLInputElement | null;
+  const emailForm = document.getElementById("email-form") as HTMLFormElement | null;
   const errorBox = document.getElementById("passkey-error") as HTMLDivElement | null;
+
+  // Sync visible email field into the hidden form input before submission
+  emailForm?.addEventListener("submit", (e) => {
+    const email = emailInput?.value.trim() ?? "";
+    if (!email) {
+      e.preventDefault();
+      showError("Enter your email address first.");
+      emailInput?.focus();
+      return;
+    }
+    if (emailHidden) emailHidden.value = email;
+  });
 
   function showError(msg: string) {
     if (!errorBox) return;
