@@ -6,17 +6,22 @@ import { createAuthenticationOptions, verifyAuthentication } from "../../lib/web
 // GET /auth/passkey-authenticate
 // Returns authentication options JSON (discoverable — no user ID needed)
 export const GET: APIRoute = async ({ url }) => {
-  const options = await createAuthenticationOptions(url.toString());
+  try {
+    const options = await createAuthenticationOptions(url.toString());
 
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  await env.DB
-    .prepare(
-      "INSERT INTO webauthn_challenges (challenge, user_id, type, expires_at) VALUES (?, NULL, 'authenticate', ?)"
-    )
-    .bind(options.challenge, expiresAt)
-    .run();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    await env.DB
+      .prepare(
+        "INSERT INTO webauthn_challenges (challenge, user_id, type, expires_at) VALUES (?, NULL, 'authenticate', ?)"
+      )
+      .bind(options.challenge, expiresAt)
+      .run();
 
-  return Response.json(options);
+    return Response.json(options);
+  } catch (err: any) {
+    console.error("passkey-authenticate GET error:", err);
+    return Response.json({ error: err?.message ?? "internal error" }, { status: 500 });
+  }
 };
 
 // POST /auth/passkey-authenticate

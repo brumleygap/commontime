@@ -6,46 +6,51 @@ import { createRegistrationOptions, verifyRegistration, toBase64url } from "../.
 // GET /auth/passkey-register?email=...
 // Returns registration options JSON; stores challenge in DB
 export const GET: APIRoute = async ({ url }) => {
-  const email = url.searchParams.get("email")?.trim().toLowerCase();
-  if (!email) {
-    return Response.json({ error: "email required" }, { status: 400 });
-  }
+  try {
+    const email = url.searchParams.get("email")?.trim().toLowerCase();
+    if (!email) {
+      return Response.json({ error: "email required" }, { status: 400 });
+    }
 
-  let user = await env.DB
-    .prepare("SELECT id, email FROM users WHERE email = ?")
-    .bind(email)
-    .first<{ id: number; email: string }>();
-
-  if (!user) {
-    user = await env.DB
-      .prepare("INSERT INTO users (email) VALUES (?) RETURNING id, email")
+    let user = await env.DB
+      .prepare("SELECT id, email FROM users WHERE email = ?")
       .bind(email)
       .first<{ id: number; email: string }>();
+
+    if (!user) {
+      user = await env.DB
+        .prepare("INSERT INTO users (email) VALUES (?) RETURNING id, email")
+        .bind(email)
+        .first<{ id: number; email: string }>();
+    }
+
+    if (!user) {
+      return Response.json({ error: "failed to find or create user" }, { status: 500 });
+    }
+
+    const existing = await env.DB
+      .prepare("SELECT credential_id FROM passkey_credentials WHERE user_id = ?")
+      .bind(user.id)
+      .all<{ credential_id: string }>();
+
+    const options = await createRegistrationOptions({
+      userId: user.id,
+      userEmail: user.email,
+      existingCredentialIds: existing.results.map((r: { credential_id: string }) => r.credential_id),
+      requestUrl: url.toString(),
+    });
+
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    await env.DB
+      .prepare("INSERT INTO webauthn_challenges (challenge, user_id, type, expires_at) VALUES (?, ?, 'register', ?)")
+      .bind(options.challenge, user.id, expiresAt)
+      .run();
+
+    return Response.json({ options, userId: user.id });
+  } catch (err: any) {
+    console.error("passkey-register GET error:", err);
+    return Response.json({ error: err?.message ?? "internal error" }, { status: 500 });
   }
-
-  if (!user) {
-    return Response.json({ error: "failed to find or create user" }, { status: 500 });
-  }
-
-  const existing = await env.DB
-    .prepare("SELECT credential_id FROM passkey_credentials WHERE user_id = ?")
-    .bind(user.id)
-    .all<{ credential_id: string }>();
-
-  const options = await createRegistrationOptions({
-    userId: user.id,
-    userEmail: user.email,
-    existingCredentialIds: existing.results.map((r: { credential_id: string }) => r.credential_id),
-    requestUrl: url.toString(),
-  });
-
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  await env.DB
-    .prepare("INSERT INTO webauthn_challenges (challenge, user_id, type, expires_at) VALUES (?, ?, 'register', ?)")
-    .bind(options.challenge, user.id, expiresAt)
-    .run();
-
-  return Response.json({ options, userId: user.id });
 };
 
 // POST /auth/passkey-register

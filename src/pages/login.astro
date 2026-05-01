@@ -122,8 +122,9 @@ const errorMessages: Record<string, string> = {
 
     try {
       const optionsRes = await fetch("/auth/passkey-authenticate");
-      if (!optionsRes.ok) throw new Error("Could not start sign-in.");
-      const options = await optionsRes.json();
+      const optionsData = await optionsRes.json();
+      if (!optionsRes.ok) throw new Error(optionsData.error ?? "Could not start sign-in.");
+      const options = optionsData;
 
       const assertion = await startAuthentication({ optionsJSON: options });
 
@@ -163,8 +164,9 @@ const errorMessages: Record<string, string> = {
 
     try {
       const optionsRes = await fetch(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
-      if (!optionsRes.ok) throw new Error("Could not start registration.");
-      const { options, userId } = await optionsRes.json();
+      const optionsData = await optionsRes.json();
+      if (!optionsRes.ok) throw new Error(optionsData.error ?? "Could not start registration.");
+      const { options, userId } = optionsData;
 
       const attestation = await startRegistration({ optionsJSON: options });
 
