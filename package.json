@@ -9,10 +9,10 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^13.2.1",
+    "@astrojs/cloudflare": "^13.3.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.0",
-    "astro": "^6.1.9"
+    "astro": "^6.2.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",
