@@ -158,7 +158,8 @@ export const inviteParticipants = defineAction({
     accept: "form",
     input: z.object({
         token: z.string(),
-        emails: z.string().min(1, "Enter at least one email address."),
+        name: z.string().min(1, "Please enter the invitee's name."),
+        email: z.email("Please enter a valid email address."),
     }),
 
     async handler(input, context) {
@@ -179,50 +180,62 @@ export const inviteParticipants = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        const addresses = input.emails
-            .split(/[\s,;]+/)
-            .map((e) => e.trim().toLowerCase())
-            .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+        const inviteeEmail = input.email.trim().toLowerCase();
+        const inviteeName = input.name.trim();
 
-        const unique = [...new Set(addresses)].slice(0, 20);
+        // Find or create the invitee's user account
+        let invitee = await db
+            .prepare(`SELECT id, name FROM users WHERE email = ?`)
+            .bind(inviteeEmail)
+            .first<{ id: number; name: string | null }>();
 
-        if (unique.length === 0) {
-            throw new ActionError({ code: "BAD_REQUEST", message: "No valid email addresses found." });
+        if (!invitee) {
+            invitee = await db
+                .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id, name`)
+                .bind(inviteeEmail, inviteeName)
+                .first<{ id: number; name: string | null }>();
+        } else if (!invitee.name) {
+            await db
+                .prepare(`UPDATE users SET name = ? WHERE id = ?`)
+                .bind(inviteeName, invitee.id)
+                .run();
         }
 
+        if (!invitee) {
+            throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create invitee account." });
+        }
+
+        // Ensure a participant row exists for this user+poll
+        const existingParticipant = await db
+            .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
+            .bind(poll.id, invitee.id)
+            .first<{ id: number }>();
+
+        if (!existingParticipant) {
+            const editToken = crypto.randomUUID().replace(/-/g, "");
+            await db
+                .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                .bind(poll.id, inviteeName, editToken, invitee.id, inviteeEmail)
+                .run();
+        }
+
+        // Create a 7-day invite token
+        const inviteToken = crypto.randomUUID().replace(/-/g, "");
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        await db
+            .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+            .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
+            .run();
+
         const origin = new URL(context.request.url).origin;
-        const pollUrl = `${origin}/poll/${input.token}`;
+        const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+        const creatorName = context.locals.user?.name ?? userEmail;
 
-        console.log(`inviteParticipants: sending invites for poll ${poll.id} to:`, unique);
-        await Promise.all(
-            unique.map(async (email) => {
-                // Find or create a participant row for this invitee so we can send a unique link
-                const existing = await db
-                    .prepare(`SELECT edit_token FROM participants WHERE poll_id = ? AND email = ?`)
-                    .bind(poll.id, email)
-                    .first<{ edit_token: string }>();
+        console.log(`inviteParticipants: sending invite to ${inviteeEmail} for poll ${poll.id}`);
+        await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, inviteUrl, creatorName, userEmail);
 
-                const editToken = existing?.edit_token ?? crypto.randomUUID().replace(/-/g, "");
-
-                if (!existing) {
-                    await db
-                        .prepare(`INSERT INTO participants (poll_id, email, edit_token) VALUES (?, ?, ?)`)
-                        .bind(poll.id, email, editToken)
-                        .run();
-                    console.log(`inviteParticipants: created participant row for ${email}`);
-                } else {
-                    console.log(`inviteParticipants: reusing existing participant row for ${email}`);
-                }
-
-                const inviteUrl = `${pollUrl}?invite=${editToken}`;
-                console.log(`inviteParticipants: sending invite email to ${email}`);
-                const result = await sendPollInviteEmail(env.EMAIL, email, poll.title, inviteUrl, userEmail);
-                console.log(`inviteParticipants: invite email sent to ${email}`);
-                return result;
-            })
-        );
-
-        return { ok: true, count: unique.length };
+        return { ok: true, count: 1 };
     },
 });
 

@@ -156,6 +156,15 @@ const errorMessages: Record<string, string> = {
     }
   }
 
+  function showPasskeyFallback(email: string) {
+    if (stepEmail)    stepEmail.style.display    = "none";
+    if (stepOptions)  stepOptions.style.display  = "block";
+    if (emailDisplay) emailDisplay.textContent   = email;
+    if (emailHidden)  emailHidden.value          = email;
+    if (registerBtn)  registerBtn.style.display  = "none";
+    if (emailForm)    emailForm.style.display    = "block";
+  }
+
   async function doPasskeyAuth() {
     clearError();
     try {
@@ -172,14 +181,13 @@ const errorMessages: Record<string, string> = {
       if (!data.ok) throw new Error(data.error ?? `Sign-in failed (${s2})`);
       window.location.href = "/";
     } catch (err: any) {
+      const email = emailHidden?.value ?? "";
+      showPasskeyFallback(email);
       if (err?.name === "NotAllowedError") {
-        // User cancelled — go back to email step so they can try magic link
-        showStep1();
-        showError("Passkey sign-in was cancelled. Enter your email again or use a magic link.");
+        showError("Passkey sign-in was cancelled. Use the magic link below to log in.");
       } else {
-        showError(err?.message ?? "Something went wrong. Try again or use a magic link.");
+        showError(err?.message ?? "Something went wrong. Use the magic link below to log in.");
       }
-      showStep1();
     }
   }
 

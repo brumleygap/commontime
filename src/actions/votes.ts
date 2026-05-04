@@ -45,6 +45,11 @@ export const submitVote = defineAction({
                     if (!row) throw new Error("Failed to insert participant.");
                     participantId = row.id;
                 }
+
+                // Keep users.name in sync with whatever name the user submitted
+                if (name) {
+                    await db.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(name, userId).run();
+                }
             } else if (input.invite) {
                 // Invited via unique link: must be the browser that originally claimed it
                 if (poll.chosen_option_id !== null) {

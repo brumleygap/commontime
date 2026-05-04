@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 
 // Poll pages and the home/create pages are publicly accessible.
 // Magic-link auth paths must also be public.
-const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/auth/passkey-", "/poll/", "/create"];
+const PUBLIC_PATHS = ["/", "/login", "/auth/verify", "/auth/invite", "/auth/passkey-", "/poll/", "/create"];
 
 export const onRequest = defineMiddleware(async (context, next) => {
     const sessionToken = context.cookies.get("session")?.value;
@@ -13,16 +13,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
         const row = await env.DB
             .prepare(
-                `SELECT s.user_id, u.email
+                `SELECT s.user_id, u.email, u.name
                  FROM sessions s
                  JOIN users u ON u.id = s.user_id
                  WHERE s.token = ? AND s.expires_at > ?`
             )
             .bind(sessionToken, now)
-            .first<{ user_id: number; email: string }>();
+            .first<{ user_id: number; email: string; name: string | null }>();
 
         if (row) {
-            context.locals.user = { id: row.user_id, email: row.email };
+            context.locals.user = { id: row.user_id, email: row.email, name: row.name };
         }
     }
 
