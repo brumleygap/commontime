@@ -232,34 +232,8 @@ export const inviteParticipants = defineAction({
         const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
         const creatorName = context.locals.user?.name ?? userEmail;
 
-        console.log(`inviteParticipants: sending invites for poll ${poll.id} to:`, unique);
-        await Promise.all(
-            unique.map(async (email) => {
-                // Find or create a participant row for this invitee so we can send a unique link
-                const existing = await db
-                    .prepare(`SELECT edit_token FROM participants WHERE poll_id = ? AND email = ?`)
-                    .bind(poll.id, email)
-                    .first<{ edit_token: string }>();
-
-                const editToken = existing?.edit_token ?? crypto.randomUUID().replace(/-/g, "");
-
-                if (!existing) {
-                    await db
-                        .prepare(`INSERT INTO participants (poll_id, email, edit_token) VALUES (?, ?, ?)`)
-                        .bind(poll.id, email, editToken)
-                        .run();
-                    console.log(`inviteParticipants: created participant row for ${email}`);
-                } else {
-                    console.log(`inviteParticipants: reusing existing participant row for ${email}`);
-                }
-
-                const inviteUrl = `${pollUrl}?invite=${editToken}`;
-                console.log(`inviteParticipants: sending invite email to ${email}`);
-                const result = await sendPollInviteEmail(env.EMAIL, email, poll.title, poll.description, inviteUrl, userEmail);
-                console.log(`inviteParticipants: invite email sent to ${email}`);
-                return result;
-            })
-        );
+        console.log(`inviteParticipants: sending invite to ${inviteeEmail} for poll ${poll.id}`);
+        await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, poll.description, inviteUrl, creatorName, userEmail);
 
         return { ok: true, count: 1 };
     },
