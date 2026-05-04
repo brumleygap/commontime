@@ -22,6 +22,7 @@ declare namespace App {
         user?: {
             id: number;
             email: string;
+            name: string | null;
         };
     }
 }

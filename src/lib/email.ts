@@ -1,3 +1,7 @@
+function he(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 export async function sendFinalizationEmail(
     emailBinding: Fetcher,
     to: string,
@@ -15,7 +19,7 @@ export async function sendFinalizationEmail(
 
     const descText = pollDescription ? `\n\n${pollDescription}` : "";
     const descHtml = pollDescription
-        ? `<p style="font-style:italic;color:#555;margin:0 0 16px">${pollDescription}</p>`
+        ? `<p style="font-style:italic;color:#555;margin:0 0 16px">${he(pollDescription)}</p>`
         : "";
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
@@ -27,7 +31,7 @@ export async function sendFinalizationEmail(
             subject: `It's happening: ${pollTitle}`,
             text: `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDate}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`,
             html: `<p>Great news — a date has been confirmed.</p>
-<h2 style="font-family:Georgia,serif;margin:0 0 8px">${pollTitle}</h2>
+<h2 style="font-family:Georgia,serif;margin:0 0 8px">${he(pollTitle)}</h2>
 ${descHtml}<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDate}</p>
 <p style="margin:0 0 8px"><a href="${calendarUrl}" style="color:#c8102e;font-weight:bold">Add to calendar →</a></p>
 <p style="margin:0 0 16px"><a href="${pollUrl}" style="color:#888;font-size:13px">View poll</a></p>
@@ -56,7 +60,7 @@ export async function sendReopenEmail(
             subject: `Voting re-opened: ${pollTitle}`,
             text: `The organiser has re-opened voting for "${pollTitle}". Head back to the poll to update your availability.\n\n${pollUrl}`,
             html: `<p>The organiser has re-opened voting for this poll.</p>
-<h2 style="font-family:Georgia,serif;margin:0 0 16px">${pollTitle}</h2>
+<h2 style="font-family:Georgia,serif;margin:0 0 16px">${he(pollTitle)}</h2>
 <p><a href="${pollUrl}" style="color:#c8102e;font-weight:bold">Update your availability →</a></p>
 <p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,
         }),
@@ -71,6 +75,7 @@ export async function sendReopenEmail(
 export async function sendPollInviteEmail(
     emailBinding: Fetcher,
     to: string,
+    inviteeName: string,
     pollTitle: string,
     pollDescription: string | null,
     pollUrl: string,
@@ -87,6 +92,7 @@ export async function sendPollInviteEmail(
         body: JSON.stringify({
             to,
             from: { email: "hello@commontime.app", name: "CommonTime" },
+            replyTo: creatorEmail,
             subject: `You're invited: ${pollTitle}`,
             text: `${inviterEmail} has invited you to respond to a scheduling poll.\n\nPoll: ${pollTitle}${descText}\n\n${pollUrl}\n\nClick the link to see the options and mark your availability.`,
             html: `<p><strong>${inviterEmail}</strong> has invited you to respond to a scheduling poll.</p>

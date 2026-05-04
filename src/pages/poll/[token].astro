@@ -19,6 +19,8 @@ const unlockError = unlockResult?.error;
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
 
+const welcomed = Astro.url.searchParams.get("welcomed") === "1";
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 const poll = await db
@@ -331,9 +333,17 @@ function cellColor(av: number | undefined): string {
           </div>
         )}
 
-        {myParticipantId && (
+        {welcomed && currentUser && (
+          <div class="welcomed-banner">
+            <strong>Welcome to CommonTime!</strong>
+            <span>You've been invited to this poll. Mark your availability below.</span>
+            <a href="/login" class="welcomed-passkey-link">Add a passkey for easy sign-in next time →</a>
+          </div>
+        )}
+
+        {!welcomed && myParticipantId && (
           <div class="welcome-banner">
-            <strong>Welcome back{currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
+            <strong>Welcome back{currentUser?.name ? `, ${currentUser.name}` : currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
             <span>Your previous selections are loaded. Update any time.</span>
           </div>
         )}
@@ -373,7 +383,7 @@ function cellColor(av: number | undefined): string {
               name="name"
               type="text"
               autocomplete="name"
-              value={currentUser?.email ?? ""}
+              value={currentUser?.name ?? currentUser?.email ?? ""}
               placeholder="e.g. Priya"
               class="name-input"
             />
@@ -510,24 +520,20 @@ function cellColor(av: number | undefined): string {
     {isCreator && isOpen && (
       <div class="invite-card">
         <div class="invite-card-head">
-          <h2 class="invite-title">Invite people</h2>
-          <p class="invite-sub">Send a direct link to this poll by email.</p>
+          <h2 class="invite-title">Invite someone</h2>
+          <p class="invite-sub">Send a sign-in link directly to their inbox.</p>
         </div>
 
         {inviteResult?.data?.ok && (
           <div class="success-banner">
-            <strong>Invites sent!</strong>
-            <span>
-              {inviteResult.data.count === 1
-                ? "1 person invited."
-                : `${inviteResult.data.count} people invited.`}
-            </span>
+            <strong>Invite sent!</strong>
+            <span>They'll receive an email with a link to this poll.</span>
           </div>
         )}
 
         {inviteError && (
           <div class="error-banner-inline">
-            <strong>Couldn't send invites.</strong>
+            <strong>Couldn't send invite.</strong>
             {inviteError.message && <span>{inviteError.message}</span>}
           </div>
         )}
@@ -535,18 +541,31 @@ function cellColor(av: number | undefined): string {
         <form method="POST" action={actions.inviteParticipants} class="invite-form">
           <input type="hidden" name="token" value={token} />
           <div class="invite-field">
-            <label for="invite-emails" class="field-label">Email addresses</label>
-            <textarea
-              id="invite-emails"
-              name="emails"
-              placeholder={"alice@example.com, bob@example.com"}
-              class="invite-textarea"
-              rows={3}
-            ></textarea>
-            <p class="invite-hint">Separate multiple addresses with commas or new lines. Up to 20 per send.</p>
+            <label for="invite-name" class="field-label">Their name</label>
+            <input
+              id="invite-name"
+              name="name"
+              type="text"
+              autocomplete="off"
+              placeholder="e.g. Alice"
+              class="invite-input"
+              required
+            />
+          </div>
+          <div class="invite-field">
+            <label for="invite-email" class="field-label">Their email</label>
+            <input
+              id="invite-email"
+              name="email"
+              type="email"
+              autocomplete="off"
+              placeholder="alice@example.com"
+              class="invite-input"
+              required
+            />
           </div>
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Send invites</button>
+            <button type="submit" class="invite-btn">♩ Send invite</button>
           </div>
         </form>
       </div>
@@ -1294,34 +1313,56 @@ function cellColor(av: number | undefined): string {
     margin-bottom: 12px;
   }
 
-  .invite-textarea {
+  .invite-input {
     width: 100%;
     border: none;
     border-bottom: 2px solid var(--ink);
     background: transparent;
-    font-family: 'DM Mono', monospace;
+    font-family: 'Libre Baskerville', serif;
     font-size: 16px;
     color: var(--ink);
-    padding: 6px 0;
+    padding: 6px 0 8px;
     outline: none;
-    resize: vertical;
-    line-height: 1.6;
   }
 
-  .invite-textarea::placeholder {
+  .invite-input::placeholder {
     color: var(--placeholder);
   }
 
-  .invite-textarea:focus {
+  .invite-input:focus {
     border-color: var(--red);
   }
 
-  .invite-hint {
+  .welcomed-banner {
+    padding: 14px 20px;
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .welcomed-banner strong {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    color: var(--green);
+  }
+
+  .welcomed-banner span {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--green);
+  }
+
+  .welcomed-passkey-link {
     font-family: 'DM Mono', monospace;
     font-size: 13px;
-    letter-spacing: 0.03em;
-    color: var(--muted);
-    margin-top: 6px;
+    letter-spacing: 0.04em;
+    color: var(--green);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    margin-top: 4px;
   }
 
   .invite-submit-row {
