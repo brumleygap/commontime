@@ -172,7 +172,7 @@ if (user) {
 
       {myPolls.length === 0 ? (
         <div class="empty-state">
-          <span class="empty-glyph" aria-hidden="true">𝄴</span>
+          <img src="/commontime-logo.png" alt="CommonTime" class="empty-logo" aria-hidden="true" />
           <p class="empty-msg">No polls yet.</p>
           <a href="/create" class="ct-btn">♩ Create your first poll</a>
         </div>
@@ -540,13 +540,10 @@ if (user) {
     background: var(--white);
   }
 
-  .empty-glyph {
-    font-family: 'Playfair Display', serif;
-    font-size: 64px;
-    font-weight: 900;
-    color: var(--ink);
-    opacity: 0.08;
-    line-height: 1;
+  .empty-logo {
+    width: 84px;
+    height: auto;
+    opacity: 0.16;
   }
 
   .empty-msg {

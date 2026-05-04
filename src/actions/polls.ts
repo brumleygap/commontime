@@ -172,9 +172,9 @@ export const inviteParticipants = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -233,7 +233,7 @@ export const inviteParticipants = defineAction({
         const creatorName = context.locals.user?.name ?? userEmail;
 
         console.log(`inviteParticipants: sending invite to ${inviteeEmail} for poll ${poll.id}`);
-        await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, inviteUrl, creatorName, userEmail);
+        await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, poll.description, inviteUrl, creatorName, userEmail);
 
         return { ok: true, count: 1 };
     },

@@ -77,10 +77,16 @@ export async function sendPollInviteEmail(
     to: string,
     inviteeName: string,
     pollTitle: string,
+    pollDescription: string | null,
     inviteUrl: string,
     creatorName: string,
     creatorEmail: string,
 ) {
+    const descText = pollDescription ? `\n\n${pollDescription}` : "";
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;line-height:1.4;margin:0 0 16px">${he(pollDescription)}</p>`
+        : "";
+
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,11 +95,11 @@ export async function sendPollInviteEmail(
             from: { email: "hello@commontime.app", name: "CommonTime" },
             replyTo: creatorEmail,
             subject: `You're invited: ${pollTitle}`,
-            text: `Hello, ${inviteeName}. ${creatorName} has invited you to help find a time for "${pollTitle}".\n\nClick below to see the options and mark your availability:\n\n${inviteUrl}\n\nThis link signs you in automatically.`,
+            text: `Hello, ${inviteeName}. ${creatorName} has invited you to help find a time for "${pollTitle}".${descText}\n\nClick below to see the options and mark your availability:\n\n${inviteUrl}\n\nThis link signs you in automatically.`,
             html: `<p>Hello, <strong>${he(inviteeName)}</strong>.</p>
 <p><strong>${he(creatorName)}</strong> has invited you to help find a time for this event:</p>
-<h2 style="font-family:Georgia,serif;margin:8px 0 16px">${he(pollTitle)}</h2>
-<p><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">View poll and mark your availability →</a></p>
+<h2 style="font-family:Georgia,serif;margin:8px 0 8px">${he(pollTitle)}</h2>
+${descHtml}<p><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">View poll and mark your availability →</a></p>
 <p style="color:#888;font-size:12px">This link signs you in automatically. CommonTime helps groups find a time that works for everyone.</p>`,
         }),
     });
