@@ -75,7 +75,6 @@ export async function sendReopenEmail(
 export async function sendPollInviteEmail(
     emailBinding: Fetcher,
     to: string,
-    inviteeName: string,
     pollTitle: string,
     pollDescription: string | null,
     pollUrl: string,
@@ -92,7 +91,6 @@ export async function sendPollInviteEmail(
         body: JSON.stringify({
             to,
             from: { email: "hello@commontime.app", name: "CommonTime" },
-            replyTo: creatorEmail,
             subject: `You're invited: ${pollTitle}`,
             text: `${inviterEmail} has invited you to respond to a scheduling poll.\n\nPoll: ${pollTitle}${descText}\n\n${pollUrl}\n\nClick the link to see the options and mark your availability.`,
             html: `<p><strong>${inviterEmail}</strong> has invited you to respond to a scheduling poll.</p>
