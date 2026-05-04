@@ -72,9 +72,15 @@ export async function sendPollInviteEmail(
     emailBinding: Fetcher,
     to: string,
     pollTitle: string,
+    pollDescription: string | null,
     pollUrl: string,
     inviterEmail: string,
 ) {
+    const descText = pollDescription ? `\n\n${pollDescription}` : "";
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;line-height:1.4;margin:0 0 16px">${pollDescription}</p>`
+        : "";
+
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,10 +88,10 @@ export async function sendPollInviteEmail(
             to,
             from: { email: "hello@commontime.app", name: "CommonTime" },
             subject: `You're invited: ${pollTitle}`,
-            text: `${inviterEmail} has invited you to respond to a scheduling poll.\n\nPoll: ${pollTitle}\n\n${pollUrl}\n\nClick the link to see the options and mark your availability.`,
+            text: `${inviterEmail} has invited you to respond to a scheduling poll.\n\nPoll: ${pollTitle}${descText}\n\n${pollUrl}\n\nClick the link to see the options and mark your availability.`,
             html: `<p><strong>${inviterEmail}</strong> has invited you to respond to a scheduling poll.</p>
-<h2 style="font-family:Georgia,serif">${pollTitle}</h2>
-<p><a href="${pollUrl}" style="color:#c8102e">View poll and mark your availability →</a></p>
+<h2 style="font-family:Georgia,serif;margin:0 0 8px">${pollTitle}</h2>
+${descHtml}<p><a href="${pollUrl}" style="color:#c8102e">View poll and mark your availability →</a></p>
 <p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,
         }),
     });
