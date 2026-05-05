@@ -95,7 +95,7 @@ Always use `--remote`. There is no local database.
 
 ## Architecture
 
-**CommonTime** is a Doodle-style scheduling poll app. It is a fully server-rendered Astro 5 app (`output: "server"`) deployed as a Cloudflare Worker via `@astrojs/cloudflare`.
+**CommonTime** is a Doodle-style scheduling poll app. It is a fully server-rendered Astro 6 app (`output: "server"`) with Tailwind 4, deployed as a **Cloudflare Worker** (not Pages) via `@astrojs/cloudflare`.
 
 ### Data layer
 
@@ -121,7 +121,7 @@ Magic link flow: user submits email on `/login` → `sendMagicLink` action finds
 
 `src/middleware.ts` runs on every request: reads the `session` cookie, joins `sessions` → `users`, and populates `locals.user = { id, email }` if valid.
 
-The `EMAIL` binding is a **Service binding** to the `commontime-email-sender` Worker (which holds the actual `send_email` binding). Cloudflare Pages does not support `send_email` bindings directly. It is configured in the Cloudflare Pages dashboard (Settings → Bindings → Service binding) and typed as `Fetcher` in `src/env.d.ts`.
+The `EMAIL` binding is a **Service binding** to the `commontime-email-sender` Worker (which holds the actual `send_email` binding). It is configured in `wrangler.jsonc` and typed as `Fetcher` in `src/env.d.ts`.
 
 ### Routing and pages
 

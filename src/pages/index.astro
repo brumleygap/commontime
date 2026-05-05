@@ -11,6 +11,9 @@ type PollRow = {
   is_creator: number;
   is_locked: number;
   is_open: number;
+  is_cancelled: number;
+  cancelled_at: string | null;
+  rescheduled_poll_token: string | null;
   participant_count: number;
   responded_count: number;
   // "YYYY-MM-DDTHH:MM|yesCount|maybeCount~..." one entry per option, sorted by datetime
@@ -99,6 +102,10 @@ const CHOSEN_DT_SQL = `
 let myPolls: EnrichedPoll[] = [];
 let guestPolls: EnrichedPoll[] = [];
 
+function daysSince(isoStr: string): number {
+  return (Date.now() - new Date(isoStr).getTime()) / (1000 * 60 * 60 * 24);
+}
+
 if (user) {
   const { results } = await env.DB
     .prepare(
@@ -106,7 +113,10 @@ if (user) {
          p.token, p.title, p.created_at,
          (p.creator_id = ?) AS is_creator,
          (p.chosen_option_id IS NOT NULL) AS is_locked,
-         (p.chosen_option_id IS NULL AND (SELECT COUNT(*) FROM poll_options
+         (p.cancelled_at IS NOT NULL) AS is_cancelled,
+         p.cancelled_at,
+         p.rescheduled_poll_token,
+         (p.chosen_option_id IS NULL AND p.cancelled_at IS NULL AND (SELECT COUNT(*) FROM poll_options
           WHERE poll_id = p.id
             AND option_datetime > strftime('%Y-%m-%dT%H:%M', 'now')) > 0) AS is_open,
          (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
@@ -121,7 +131,7 @@ if (user) {
           OR p.id IN (SELECT poll_id FROM participants WHERE user_id = ?))
          AND p.token NOT IN (SELECT poll_token FROM poll_dismissals WHERE user_id = ?)
        ORDER BY p.created_at DESC
-       LIMIT 20`
+       LIMIT 50`
     )
     .bind(user.id, user.id, user.id, user.id)
     .all<PollRow>();
@@ -137,7 +147,10 @@ if (user) {
            p.token, p.title, p.created_at,
            0 AS is_creator,
            (p.chosen_option_id IS NOT NULL) AS is_locked,
-           (p.chosen_option_id IS NULL AND (SELECT COUNT(*) FROM poll_options
+           (p.cancelled_at IS NOT NULL) AS is_cancelled,
+           p.cancelled_at,
+           p.rescheduled_poll_token,
+           (p.chosen_option_id IS NULL AND p.cancelled_at IS NULL AND (SELECT COUNT(*) FROM poll_options
             WHERE poll_id = p.id
               AND option_datetime > strftime('%Y-%m-%dT%H:%M', 'now')) > 0) AS is_open,
            (SELECT COUNT(*) FROM participants WHERE poll_id = p.id) AS participant_count,
@@ -164,13 +177,13 @@ if (user) {
     <div class="mx-auto max-w-2xl px-6 py-10">
       <div class="dash-header">
         <div>
-          <p class="ct-eyebrow" style="margin-bottom: 2px;">Your polls</p>
+          <p class="ct-eyebrow" style="margin-bottom: 2px;">Scheduling Polls</p>
           <p class="dash-sub">Polls you've created or responded to</p>
         </div>
         <a href="/create" class="new-poll-btn">♩ Create a poll</a>
       </div>
 
-      {myPolls.length === 0 ? (
+      {myPolls.filter(p => !p.is_cancelled).length === 0 && myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) < 7).length === 0 ? (
         <div class="empty-state">
           <img src="/commontime-logo.png" alt="CommonTime" class="empty-logo" aria-hidden="true" />
           <p class="empty-msg">No polls yet.</p>
@@ -178,42 +191,92 @@ if (user) {
         </div>
       ) : (
         <div class="poll-list">
-          {myPolls.map((poll) => (
-            <div class="poll-card-wrap" data-token={poll.token}>
-              <div class={`poll-row${poll.is_creator ? " creator" : ""}`}>
-                <div class="poll-row-body">
-                  <a href={`/poll/${poll.token}`} class="poll-title-link">
-                    <span class="poll-row-title">{poll.title}</span>
-                  </a>
-                  <div class="poll-row-meta">
-                    {poll.is_locked
-                      ? <span class="status-badge locked">date set</span>
-                      : poll.is_open
-                        ? <span class="status-badge open">open</span>
-                        : <span class="status-badge past">past</span>}
-                    {poll.is_creator ? <span class="badge">Your Poll</span> : null}
-                    <span>{poll.responded_count} / {poll.participant_count} responded</span>
-                  </div>
-                  {poll.is_locked
-                    ? poll.chosenFormatted && (
-                        <div class="poll-row-chosen">{poll.chosenFormatted}</div>
-                      )
-                    : poll.heatDays.length > 0 && (
-                        <div class="poll-row-heat">
-                          {poll.heatDays.slice(0, 14).map(day => (
-                            <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day)}></div>
-                          ))}
-                          {poll.heatDays.length > 14 && (
-                            <span class="heat-more">+{poll.heatDays.length - 14}</span>
-                          )}
+          {myPolls.filter(p => !p.is_cancelled || daysSince(p.cancelled_at!) < 7).map((poll) => {
+            const isCancelled = !!poll.is_cancelled;
+            return (
+              <div class={`poll-card-wrap${isCancelled ? " cancelled-card" : ""}`} data-token={poll.token}>
+                <div class={`poll-row${poll.is_creator && !isCancelled ? " creator" : ""}${isCancelled ? " cancelled" : ""}`}>
+                  <div class="poll-row-body">
+                    <a href={`/poll/${poll.token}`} class="poll-title-link">
+                      <span class="poll-row-title">{poll.title}</span>
+                    </a>
+                    <div class="poll-row-meta">
+                      {isCancelled
+                        ? <span class="status-badge cancelled">cancelled</span>
+                        : poll.is_locked
+                          ? <span class="status-badge locked">date set</span>
+                          : poll.is_open
+                            ? <span class="status-badge open">open</span>
+                            : <span class="status-badge past">past</span>}
+                      {poll.is_creator ? <span class="badge">Your Poll</span> : null}
+                      {!isCancelled && <span>{poll.responded_count} / {poll.participant_count} responded</span>}
+                    </div>
+                    {isCancelled
+                      ? (
+                        <div class="poll-row-cancelled-actions">
+                          {poll.rescheduled_poll_token
+                            ? <a href={`/poll/${poll.rescheduled_poll_token}`} class="rescheduled-link">Moved to new poll →</a>
+                            : poll.is_creator
+                              ? <a href={`/create?from=${poll.token}`} class="try-new-dates-btn">♩ Try New Dates</a>
+                              : null}
                         </div>
                       )
-                  }
+                      : poll.is_locked
+                        ? poll.chosenFormatted && (
+                            <div class="poll-row-chosen">{poll.chosenFormatted}</div>
+                          )
+                        : poll.heatDays.length > 0 && (
+                            <div class="poll-row-heat">
+                              {poll.heatDays.slice(0, 14).map(day => (
+                                <div class="heat-cell" style={cellStyle(day.score, day.max)} data-tip={heatTip(day)}></div>
+                              ))}
+                              {poll.heatDays.length > 14 && (
+                                <span class="heat-more">+{poll.heatDays.length - 14}</span>
+                              )}
+                            </div>
+                          )
+                    }
+                  </div>
+                </div>
+                {!isCancelled && <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <!-- Cancelled Polls archive (≥ 7 days old) -->
+      {myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) >= 7).length > 0 && (
+        <div class="cancelled-archive">
+          <button class="cancelled-archive-toggle" id="cancelled-toggle" aria-expanded="false">
+            Cancelled polls
+            <span class="cancelled-archive-count">{myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) >= 7).length}</span>
+            <span class="cancelled-archive-chevron">▸</span>
+          </button>
+          <div class="cancelled-archive-list" id="cancelled-list" hidden>
+            {myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) >= 7).map((poll) => (
+              <div class="poll-card-wrap cancelled-card" data-token={poll.token}>
+                <div class="poll-row cancelled">
+                  <div class="poll-row-body">
+                    <a href={`/poll/${poll.token}`} class="poll-title-link">
+                      <span class="poll-row-title">{poll.title}</span>
+                    </a>
+                    <div class="poll-row-meta">
+                      <span class="status-badge cancelled">cancelled</span>
+                      {poll.is_creator ? <span class="badge">Your Poll</span> : null}
+                    </div>
+                    <div class="poll-row-cancelled-actions">
+                      {poll.rescheduled_poll_token
+                        ? <a href={`/poll/${poll.rescheduled_poll_token}`} class="rescheduled-link">Moved to new poll →</a>
+                        : poll.is_creator
+                          ? <a href={`/create?from=${poll.token}`} class="try-new-dates-btn">♩ Try New Dates</a>
+                          : null}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -465,6 +528,98 @@ if (user) {
   .status-badge.past {
     color: var(--muted);
     border: 1px solid var(--staff);
+  }
+
+  .status-badge.cancelled {
+    color: #6b6560;
+    border: 1px solid #9e9890;
+  }
+
+  /* ── Cancelled card ─────────────────────────────────────── */
+  .poll-row.cancelled {
+    background: #f5f4f1;
+    border-left-color: #c8c3bb;
+    opacity: 0.75;
+  }
+
+  .poll-row-cancelled-actions {
+    margin-top: 8px;
+  }
+
+  .try-new-dates-btn {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+    padding: 6px 14px;
+    text-decoration: none;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .try-new-dates-btn:hover {
+    background: var(--ink);
+    color: var(--cream);
+  }
+
+  .rescheduled-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* ── Cancelled archive section ───────────────────────────── */
+  .cancelled-archive {
+    margin-top: 28px;
+    border-top: 1px solid var(--staff);
+    padding-top: 16px;
+  }
+
+  .cancelled-archive-toggle {
+    background: none;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .cancelled-archive-toggle:hover {
+    color: var(--ink);
+  }
+
+  .cancelled-archive-count {
+    background: var(--staff);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+
+  .cancelled-archive-chevron {
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+
+  .cancelled-archive-toggle[aria-expanded="true"] .cancelled-archive-chevron {
+    transform: rotate(90deg);
+  }
+
+  .cancelled-archive-list {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   /* ── Heatmap ─────────────────────────────────────────────── */
@@ -795,4 +950,15 @@ if (user) {
       if (wrap) dismissCard(wrap);
     });
   });
+
+  // ── Cancelled archive toggle ────────────────────────────────
+  const toggleBtn = document.getElementById("cancelled-toggle");
+  const archiveList = document.getElementById("cancelled-list");
+  if (toggleBtn && archiveList) {
+    toggleBtn.addEventListener("click", () => {
+      const expanded = toggleBtn.getAttribute("aria-expanded") === "true";
+      toggleBtn.setAttribute("aria-expanded", String(!expanded));
+      archiveList.hidden = expanded;
+    });
+  }
 </script>

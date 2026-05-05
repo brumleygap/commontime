@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/onesignal";
 
 function makeToken(length = 12) {
@@ -63,6 +63,66 @@ export const createPoll = defineAction({
             );
 
             await db.batch(optionInserts);
+
+            // If this poll is a reschedule of an existing poll, cancel the old one
+            // and copy its participants to the new poll
+            if (input.fromToken) {
+                const oldPoll = await db
+                    .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+                    .bind(input.fromToken, creatorId)
+                    .first<{ id: number }>();
+
+                if (oldPoll) {
+                    await db
+                        .prepare(`UPDATE polls SET cancelled_at = datetime('now'), chosen_option_id = NULL, rescheduled_poll_token = ? WHERE id = ?`)
+                        .bind(token, oldPoll.id)
+                        .run();
+
+                    const oldParticipants = (
+                        await db
+                            .prepare(`SELECT name, user_id, email FROM participants WHERE poll_id = ?`)
+                            .bind(oldPoll.id)
+                            .all<{ name: string | null; user_id: number | null; email: string | null }>()
+                    ).results;
+
+                    if (oldParticipants.length > 0) {
+                        await db.batch(
+                            oldParticipants.map(p => {
+                                const editToken = crypto.randomUUID().replace(/-/g, "");
+                                return db
+                                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                                    .bind(pollId, p.name ?? null, editToken, p.user_id ?? null, p.email ?? null);
+                            })
+                        );
+                    }
+
+                    const origin = new URL(context.request.url).origin;
+                    const newPollUrl = `${origin}/poll/${token}`;
+                    const organizerEmail = context.locals.user?.email ?? "hello@commontime.app";
+
+                    const recipients: { email: string; user_id: number | null }[] = (
+                        await db
+                            .prepare(`
+                                SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
+                                FROM participants pa
+                                LEFT JOIN users u ON u.id = pa.user_id
+                                WHERE pa.poll_id = ?
+                                  AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                            `)
+                            .bind(oldPoll.id)
+                            .all<{ email: string; user_id: number | null }>()
+                    ).results;
+
+                    await Promise.allSettled(
+                        recipients.map(r =>
+                            sendRescheduleEmail(env.EMAIL, r.email, title, newPollUrl, organizerEmail)
+                        )
+                    );
+
+                    const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
+                    await sendPushToUsers(pushUserIds, `New dates: ${title}`, "The organiser has started a new poll with new options.", newPollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+                }
+            }
 
             return { ok: true, token };
         } catch (err: any) {
