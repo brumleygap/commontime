@@ -9,6 +9,8 @@ interface Env {
     DB: D1Database;
     EMAIL: Fetcher;
     ASSETS: Fetcher;
+    ONESIGNAL_APP_ID: string;
+    ONESIGNAL_API_KEY: string;
 }
 
 declare module "cloudflare:workers" {

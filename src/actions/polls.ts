@@ -3,6 +3,7 @@ import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
 import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail } from "../lib/email";
+import { sendPushToUsers } from "../lib/onesignal";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -125,22 +126,22 @@ export const lockPoll = defineAction({
         const pollUrl = `${origin}/poll/${input.token}`;
         const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
 
-        const recipients: { email: string }[] = (
+        const recipients: { email: string; user_id: number | null }[] = (
             await db
                 .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email
+                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
                     FROM participants pa
                     LEFT JOIN users u ON u.id = pa.user_id
                     WHERE pa.poll_id = ?
                       AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
                 `)
                 .bind(poll.id)
-                .all<{ email: string }>()
+                .all<{ email: string; user_id: number | null }>()
         ).results;
 
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const sendResults = await Promise.allSettled(
-            recipients.map((r: { email: string }) =>
+            recipients.map((r) =>
                 sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
             )
         );
@@ -149,6 +150,9 @@ export const lockPoll = defineAction({
                 console.error(`lockPoll: failed to send finalization email to ${recipients[i].email}:`, r.reason);
             }
         });
+
+        const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
+        await sendPushToUsers(pushUserIds, `It's happening: ${poll.title}`, "A date has been confirmed.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
 
         return { ok: true };
     },
@@ -269,17 +273,17 @@ export const cancelPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string }[] = (
+        const recipients: { email: string; user_id: number | null }[] = (
             await db
                 .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email
+                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
                     FROM participants pa
                     LEFT JOIN users u ON u.id = pa.user_id
                     WHERE pa.poll_id = ?
                       AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
                 `)
                 .bind(poll.id)
-                .all<{ email: string }>()
+                .all<{ email: string; user_id: number | null }>()
         ).results;
 
         console.log(`cancelPoll: sending cancellation emails to ${recipients.length} recipient(s)`);
@@ -293,6 +297,9 @@ export const cancelPoll = defineAction({
                 console.error(`cancelPoll: failed to send cancellation email to ${recipients[i].email}:`, r.reason);
             }
         });
+
+        const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
+        await sendPushToUsers(pushUserIds, `Cancelled: ${poll.title}`, "The organiser has cancelled this event.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
 
         return { ok: true };
     },
@@ -327,17 +334,17 @@ export const uncancelPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string }[] = (
+        const recipients: { email: string; user_id: number | null }[] = (
             await db
                 .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email
+                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
                     FROM participants pa
                     LEFT JOIN users u ON u.id = pa.user_id
                     WHERE pa.poll_id = ?
                       AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
                 `)
                 .bind(poll.id)
-                .all<{ email: string }>()
+                .all<{ email: string; user_id: number | null }>()
         ).results;
 
         console.log(`uncancelPoll: sending reopen emails to ${recipients.length} recipient(s)`);
@@ -349,6 +356,9 @@ export const uncancelPoll = defineAction({
                 console.error(`uncancelPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
             }
         });
+
+        const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
+        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
 
         return { ok: true };
     },
@@ -383,28 +393,31 @@ export const unlockPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string }[] = (
+        const recipients: { email: string; user_id: number | null }[] = (
             await db
                 .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email
+                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
                     FROM participants pa
                     LEFT JOIN users u ON u.id = pa.user_id
                     WHERE pa.poll_id = ?
                       AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
                 `)
                 .bind(poll.id)
-                .all<{ email: string }>()
+                .all<{ email: string; user_id: number | null }>()
         ).results;
 
         console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const reopenResults = await Promise.allSettled(
-            recipients.map((r: { email: string }) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
         );
         reopenResults.forEach((r, i) => {
             if (r.status === "rejected") {
                 console.error(`unlockPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
             }
         });
+
+        const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
+        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
 
         return { ok: true };
     },

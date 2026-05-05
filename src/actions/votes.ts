@@ -1,6 +1,7 @@
 import { defineAction, ActionError } from "astro:actions";
 import { env } from "cloudflare:workers";
 import { SubmitVoteSchema } from "./schemas/votes";
+import { sendPushToUsers } from "../lib/onesignal";
 
 export const submitVote = defineAction({
     accept: "form",
@@ -11,9 +12,9 @@ export const submitVote = defineAction({
 
         try {
             const poll = await db
-                .prepare(`SELECT id, chosen_option_id FROM polls WHERE token = ?`)
+                .prepare(`SELECT id, title, creator_id, chosen_option_id FROM polls WHERE token = ?`)
                 .bind(input.token)
-                .first<{ id: number; chosen_option_id: number | null }>();
+                .first<{ id: number; title: string; creator_id: number | null; chosen_option_id: number | null }>();
 
             if (!poll) {
                 throw new ActionError({ code: "BAD_REQUEST", message: "Unknown poll token." });
@@ -110,6 +111,20 @@ export const submitVote = defineAction({
             );
             for (const v of input.voteData) {
                 await voteStmt.bind(participantId, v.optionId, v.availability).run();
+            }
+
+            // Notify the poll creator that someone voted (skip if creator is voting on their own poll)
+            if (poll.creator_id && poll.creator_id !== userId) {
+                const voterName = input.name?.trim() || input.email || "Someone";
+                const origin = new URL(context.request.url).origin;
+                await sendPushToUsers(
+                    [poll.creator_id],
+                    poll.title,
+                    `${voterName} just voted.`,
+                    `${origin}/poll/${input.token}`,
+                    env.ONESIGNAL_APP_ID,
+                    env.ONESIGNAL_API_KEY,
+                );
             }
 
             // Ensure the poll appears in recent_polls after voting (the poll page sets this
