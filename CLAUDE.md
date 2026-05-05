@@ -80,7 +80,9 @@ Two deployed environments:
 
 Requires two GitHub Actions secrets: `CLOUDFLARE_API_TOKEN` (D1 + Workers Edit) and `CLOUDFLARE_ACCOUNT_ID`.
 
-If a migration must be applied manually:
+**CI handles migrations automatically** — do not include manual migration steps in PR descriptions or test plans. The `migrate-preview` job runs on every PR before deploy; `migrate-production` runs on every push to `main`.
+
+If a migration must be applied manually (e.g. hotfix outside CI):
 ```bash
 # Production
 npx wrangler d1 migrations apply commontime-db --remote
