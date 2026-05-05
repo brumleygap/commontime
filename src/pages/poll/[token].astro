@@ -1742,6 +1742,7 @@ function cellColor(av: number | undefined): string {
       const btn = document.getElementById('push-toggle');
       const status = document.getElementById('push-status');
       if (!banner || !btn || !status) return;
+      if (window.location.hostname !== 'commontime.app') return;
 
       function update() {
         const granted = OneSignal.Notifications.permission;
