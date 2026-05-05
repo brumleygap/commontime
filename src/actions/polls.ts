@@ -87,7 +87,7 @@ export const createPoll = defineAction({
 
                     if (oldParticipants.length > 0) {
                         await db.batch(
-                            oldParticipants.map(p => {
+                            oldParticipants.map((p: { name: string | null; user_id: number | null; email: string | null }) => {
                                 const editToken = crypto.randomUUID().replace(/-/g, "");
                                 return db
                                     .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
