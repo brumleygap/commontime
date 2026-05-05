@@ -16,6 +16,12 @@ const lockError = lockResult?.error;
 const unlockResult = await Astro.getActionResult(actions.unlockPoll);
 const unlockError = unlockResult?.error;
 
+const cancelResult = await Astro.getActionResult(actions.cancelPoll);
+const cancelError = cancelResult?.error;
+
+const uncancelResult = await Astro.getActionResult(actions.uncancelPoll);
+const uncancelError = uncancelResult?.error;
+
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
 
@@ -25,7 +31,7 @@ const welcomed = Astro.url.searchParams.get("welcomed") === "1";
 
 const poll = await db
   .prepare(
-    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id
+    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at
      FROM polls WHERE token = ?`
   )
   .bind(token)
@@ -38,6 +44,7 @@ const poll = await db
     creator_id: number | null;
     created_at: string;
     chosen_option_id: number | null;
+    cancelled_at: string | null;
   }>();
 
 if (!poll) return new Response("Poll not found", { status: 404 });
@@ -156,7 +163,8 @@ if (currentUser) {
 // ── Poll state ────────────────────────────────────────────────────────────────
 
 const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.creator_id);
-const isOpen = poll.chosen_option_id === null;
+const isCancelled = poll.cancelled_at !== null;
+const isOpen = poll.chosen_option_id === null && !isCancelled;
 
 const chosenOption = poll.chosen_option_id
   ? await db
@@ -286,8 +294,26 @@ function cellColor(av: number | undefined): string {
 
   <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
 
-    <!-- ── Finalized banner / vote form ────────────────────────────────── -->
-    {!isOpen ? (
+    <!-- ── Cancelled banner / finalized banner / vote form ─────────────── -->
+    {isCancelled ? (
+      <div class="cancelled-banner">
+        <div class="cancelled-banner-icon" aria-hidden="true">✕</div>
+        <div style="flex:1">
+          <p class="cancelled-eyebrow">Poll cancelled</p>
+          <p class="cancelled-sub">The organiser has cancelled this meeting. All participants have been notified.</p>
+          {isCreator && (
+            <div class="reopen-section" style="border-top-color:rgba(200,16,46,0.2)">
+              {uncancelError && <p class="reopen-error">{uncancelError.message}</p>}
+              <p class="reopen-warning">Re-opening will notify everyone that voting is back on.</p>
+              <form method="POST" action={actions.uncancelPoll}>
+                <input type="hidden" name="token" value={token} />
+                <button type="submit" class="reopen-btn">Re-open for voting</button>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
+    ) : !isOpen ? (
       <div class="finalized-banner">
         <div class="finalized-banner-icon" aria-hidden="true">★</div>
         <div style="flex:1">
@@ -613,6 +639,26 @@ function cellColor(av: number | undefined): string {
               ★ Lock in this date
             </button>
           </div>
+        </form>
+      </div>
+    )}
+
+    <!-- ── Cancel section (creator only, while open) ────────────────────── -->
+    {isCreator && isOpen && (
+      <div class="cancel-section">
+        {cancelError && (
+          <p class="cancel-error">{cancelError.message}</p>
+        )}
+        <p class="cancel-warning">Cancelling this poll will notify all participants that the meeting is off. You can re-open it later if plans change.</p>
+        <form method="POST" action={actions.cancelPoll}>
+          <input type="hidden" name="token" value={token} />
+          <button
+            type="submit"
+            class="cancel-btn"
+            onclick="return confirm('Cancel this poll and notify all participants?')"
+          >
+            Cancel this poll
+          </button>
         </form>
       </div>
     )}
@@ -1085,6 +1131,80 @@ function cellColor(av: number | undefined): string {
 
   .avail-hdr-count.confirmed {
     color: var(--red);
+  }
+
+  /* ── Cancelled banner ──────────────────────────────────────────────── */
+  .cancelled-banner {
+    background: var(--busy-bg);
+    border: 1px solid var(--red);
+    border-left: 4px solid var(--red);
+    padding: 20px 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .cancelled-banner-icon {
+    font-size: 28px;
+    color: var(--red);
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .cancelled-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+
+  .cancelled-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--muted);
+  }
+
+  /* ── Cancel section ─────────────────────────────────────────────────── */
+  .cancel-section {
+    padding: 16px 0 4px;
+    border-top: 1px solid var(--staff);
+  }
+
+  .cancel-warning {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .cancel-error {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+
+  .cancel-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--red);
+    background: none;
+    border: 1px solid var(--red);
+    padding: 8px 16px;
+    min-height: 36px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .cancel-btn:hover {
+    background: var(--red);
+    color: white;
   }
 
   /* ── Finalized banner ───────────────────────────────────────────────── */

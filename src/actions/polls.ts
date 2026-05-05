@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail } from "../lib/email";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -236,6 +236,121 @@ export const inviteParticipants = defineAction({
         await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, poll.description, inviteUrl, creatorName, userEmail);
 
         return { ok: true, count: 1 };
+    },
+});
+
+export const cancelPoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to cancel a poll." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        await db
+            .prepare(`UPDATE polls SET cancelled_at = datetime('now'), chosen_option_id = NULL WHERE id = ?`)
+            .bind(poll.id)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+
+        const recipients: { email: string }[] = (
+            await db
+                .prepare(`
+                    SELECT COALESCE(u.email, pa.email) AS email
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        console.log(`cancelPoll: sending cancellation emails to ${recipients.length} recipient(s)`);
+        const sendResults = await Promise.allSettled(
+            recipients.map((r) =>
+                sendCancellationEmail(env.EMAIL, r.email, poll.title, pollUrl, userEmail)
+            )
+        );
+        sendResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`cancelPoll: failed to send cancellation email to ${recipients[i].email}:`, r.reason);
+            }
+        });
+
+        return { ok: true };
+    },
+});
+
+export const uncancelPoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to un-cancel a poll." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        await db
+            .prepare(`UPDATE polls SET cancelled_at = NULL WHERE id = ?`)
+            .bind(poll.id)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        const pollUrl = `${origin}/poll/${input.token}`;
+
+        const recipients: { email: string }[] = (
+            await db
+                .prepare(`
+                    SELECT COALESCE(u.email, pa.email) AS email
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                `)
+                .bind(poll.id)
+                .all<{ email: string }>()
+        ).results;
+
+        console.log(`uncancelPoll: sending reopen emails to ${recipients.length} recipient(s)`);
+        const reopenResults = await Promise.allSettled(
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+        );
+        reopenResults.forEach((r, i) => {
+            if (r.status === "rejected") {
+                console.error(`uncancelPoll: failed to send reopen email to ${recipients[i].email}:`, r.reason);
+            }
+        });
+
+        return { ok: true };
     },
 });
 

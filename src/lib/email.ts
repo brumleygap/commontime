@@ -110,6 +110,36 @@ ${descHtml}<p><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">View
     }
 }
 
+export async function sendCancellationEmail(
+    emailBinding: Fetcher,
+    to: string,
+    pollTitle: string,
+    pollUrl: string,
+    organizerEmail: string,
+) {
+    const response = await emailBinding.fetch("https://commontime-email-sender/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            to,
+            from: { email: "hello@commontime.app", name: "CommonTime" },
+            replyTo: organizerEmail,
+            subject: `Cancelled: ${pollTitle}`,
+            text: `The organiser has cancelled "${pollTitle}". If you have questions, reply to this email.\n\nView poll:\n${pollUrl}`,
+            html: `<p>The organiser has cancelled this event.</p>
+<h2 style="font-family:Georgia,serif;margin:0 0 16px">${he(pollTitle)}</h2>
+<p style="color:#888;font-size:13px">If you have questions, reply to this email.</p>
+<p style="margin:0 0 16px"><a href="${pollUrl}" style="color:#888;font-size:13px">View poll</a></p>
+<p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json() as { error?: string };
+        throw new Error(error?.error ?? `Email service returned ${response.status}`);
+    }
+}
+
 export async function sendMagicLinkEmail(
     emailBinding: Fetcher,
     to: string,
