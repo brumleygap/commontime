@@ -294,6 +294,16 @@ function cellColor(av: number | undefined): string {
 
   <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
 
+    <!-- ── Push notification opt-in (logged-in users only) ──────────────── -->
+    {currentUser && (
+      <div id="push-banner" style="display:none" class="flex items-center gap-3 text-sm font-mono text-[var(--muted)]">
+        <button id="push-toggle" class="ct-eyebrow px-3 py-1 border border-[var(--staff)] rounded hover:border-[var(--muted)] transition-colors">
+          Get notified
+        </button>
+        <span id="push-status"></span>
+      </div>
+    )}
+
     <!-- ── Cancelled banner / finalized banner / vote form ─────────────── -->
     {isCancelled ? (
       <div class="cancelled-banner">
@@ -1633,3 +1643,31 @@ function cellColor(av: number | undefined): string {
     }
   });
 </script>
+
+{currentUser && (
+  <script is:inline>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      const banner = document.getElementById('push-banner');
+      const btn = document.getElementById('push-toggle');
+      const status = document.getElementById('push-status');
+      if (!banner || !btn || !status) return;
+
+      function update() {
+        const granted = OneSignal.Notifications.permission;
+        btn.textContent = granted ? 'Notifications on' : 'Get notified';
+        btn.style.borderColor = granted ? 'var(--green)' : '';
+        btn.style.color = granted ? 'var(--green)' : '';
+        status.textContent = granted ? 'You\'ll be notified of poll updates.' : '';
+      }
+
+      banner.style.display = '';
+      update();
+
+      btn.addEventListener('click', async () => {
+        await OneSignal.Notifications.requestPermission();
+        update();
+      });
+    });
+  </script>
+)}

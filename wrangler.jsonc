@@ -21,6 +21,9 @@
   "triggers": {
     "crons": ["0 7 * * *"]
   },
+  "vars": {
+    "ONESIGNAL_APP_ID": "REPLACE_WITH_YOUR_ONESIGNAL_APP_ID"
+  },
   "services": [
     {
       "binding": "EMAIL",
@@ -37,6 +40,9 @@
   "env": {
     "preview": {
       "name": "commontime-preview",
+      "vars": {
+        "ONESIGNAL_APP_ID": "REPLACE_WITH_YOUR_ONESIGNAL_APP_ID"
+      },
       "d1_databases": [
         {
           "binding": "DB",

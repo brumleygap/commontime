@@ -1,0 +1,12 @@
+{
+  "name": "CommonTime",
+  "short_name": "CommonTime",
+  "description": "Find a time that works for everyone",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#c8102e",
+  "background_color": "#f5f2ec",
+  "icons": [
+    { "src": "/commontime-logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
