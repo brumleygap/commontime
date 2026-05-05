@@ -1,0 +1,1 @@
+ALTER TABLE polls ADD COLUMN cancelled_at TIMESTAMP NULL;
