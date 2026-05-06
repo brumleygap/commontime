@@ -19,8 +19,6 @@ const unlockError = unlockResult?.error;
 const cancelResult = await Astro.getActionResult(actions.cancelPoll);
 const cancelError = cancelResult?.error;
 
-const uncancelResult = await Astro.getActionResult(actions.uncancelPoll);
-const uncancelError = uncancelResult?.error;
 
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
@@ -31,7 +29,7 @@ const welcomed = Astro.url.searchParams.get("welcomed") === "1";
 
 const poll = await db
   .prepare(
-    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at
+    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at, rescheduled_poll_token
      FROM polls WHERE token = ?`
   )
   .bind(token)
@@ -45,6 +43,7 @@ const poll = await db
     created_at: string;
     chosen_option_id: number | null;
     cancelled_at: string | null;
+    rescheduled_poll_token: string | null;
   }>();
 
 if (!poll) return new Response("Poll not found", { status: 404 });
@@ -311,14 +310,14 @@ function cellColor(av: number | undefined): string {
         <div style="flex:1">
           <p class="cancelled-eyebrow">Poll cancelled</p>
           <p class="cancelled-sub">The organiser has cancelled this meeting. All participants have been notified.</p>
-          {isCreator && (
+          {poll.rescheduled_poll_token && (
+            <p class="cancelled-rescheduled">
+              This poll was rescheduled. <a href={`/poll/${poll.rescheduled_poll_token}`} class="cancelled-rescheduled-link">View new poll →</a>
+            </p>
+          )}
+          {isCreator && !poll.rescheduled_poll_token && (
             <div class="reopen-section" style="border-top-color:rgba(200,16,46,0.2)">
-              {uncancelError && <p class="reopen-error">{uncancelError.message}</p>}
-              <p class="reopen-warning">Re-opening will notify everyone that voting is back on.</p>
-              <form method="POST" action={actions.uncancelPoll}>
-                <input type="hidden" name="token" value={token} />
-                <button type="submit" class="reopen-btn">Re-open for voting</button>
-              </form>
+              <a href={`/create?from=${token}`} class="try-new-dates-btn-detail">♩ Try New Dates</a>
             </div>
           )}
         </div>
@@ -611,13 +610,13 @@ function cellColor(av: number | undefined): string {
     {isCreator && isOpen && (
       <div class="finalize-card">
         <div class="finalize-card-head">
-          <h2 class="finalize-title">Finalize this poll</h2>
-          <p class="finalize-sub">Choose a date to lock in and close this poll to new responses.</p>
+          <h2 class="finalize-title">Confirm Date</h2>
+          <p class="finalize-sub">Choose a date to confirm and close this poll to new responses.</p>
         </div>
 
         {lockError && (
           <div class="error-banner-inline">
-            <strong>Couldn't finalize.</strong>
+            <strong>Couldn't confirm date.</strong>
             {lockError.message && <span>{lockError.message}</span>}
           </div>
         )}
@@ -645,9 +644,18 @@ function cellColor(av: number | undefined): string {
           </div>
 
           <div class="finalize-submit-row">
-            <button type="submit" class="ct-btn">
-              ★ Lock in this date
-            </button>
+            <div class="finalize-submit-actions">
+              <a href={`/create?from=${token}`} class="try-new-dates-link">♩ Try New Dates</a>
+              <div class="finalize-confirm-group">
+                {respondedIds.size === 0 && (
+                  <p class="finalize-waiting">Waiting for responses before confirming.</p>
+                )}
+                <button type="submit" class="ct-btn" disabled={respondedIds.size === 0}>
+                  ★ Confirm Date
+                </button>
+                <p class="finalize-notify-note">This will notify all participants.</p>
+              </div>
+            </div>
           </div>
         </form>
       </div>
@@ -659,13 +667,13 @@ function cellColor(av: number | undefined): string {
         {cancelError && (
           <p class="cancel-error">{cancelError.message}</p>
         )}
-        <p class="cancel-warning">Cancelling this poll will notify all participants that the meeting is off. You can re-open it later if plans change.</p>
+        <p class="cancel-warning">Cancelling will notify all participants that the meeting is off. You can still try new dates after cancelling.</p>
         <form method="POST" action={actions.cancelPoll}>
           <input type="hidden" name="token" value={token} />
           <button
             type="submit"
             class="cancel-btn"
-            onclick="return confirm('Cancel this poll and notify all participants?')"
+            onclick="return confirm('Cancel this poll and notify all participants?\n\nYou can still try new dates after cancelling.')"
           >
             Cancel this poll
           </button>
@@ -1178,6 +1186,37 @@ function cellColor(av: number | undefined): string {
     color: var(--muted);
   }
 
+  .cancelled-rescheduled {
+    margin-top: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .cancelled-rescheduled-link {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .try-new-dates-btn-detail {
+    display: inline-block;
+    margin-top: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+    padding: 8px 18px;
+    text-decoration: none;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .try-new-dates-btn-detail:hover {
+    background: var(--ink);
+    color: var(--cream);
+  }
+
   /* ── Cancel section ─────────────────────────────────────────────────── */
   .cancel-section {
     padding: 16px 0 4px;
@@ -1402,10 +1441,61 @@ function cellColor(av: number | undefined): string {
   }
 
   .finalize-submit-row {
-    display: flex;
-    justify-content: flex-end;
     border-top: 1px solid var(--staff);
     padding-top: 14px;
+  }
+
+  .finalize-submit-actions {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .try-new-dates-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border: 1px solid var(--staff);
+    padding: 8px 16px;
+    text-decoration: none;
+    transition: border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+    align-self: center;
+  }
+
+  .try-new-dates-link:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .finalize-confirm-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .finalize-waiting {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .finalize-notify-note {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .ct-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   /* ── Invite card ────────────────────────────────────────────────────── */
@@ -1652,6 +1742,7 @@ function cellColor(av: number | undefined): string {
       const btn = document.getElementById('push-toggle');
       const status = document.getElementById('push-status');
       if (!banner || !btn || !status) return;
+      if (window.location.hostname !== 'commontime.app') return;
 
       function update() {
         const granted = OneSignal.Notifications.permission;

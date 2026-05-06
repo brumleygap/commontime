@@ -10,6 +10,8 @@ export const CreatePollSchema = z.object({
 
     timezone: z.string().min(1, "Timezone is required."),
 
+    fromToken: z.string().optional(),
+
     options: z.preprocess(
         (v) => {
             // If it's a JSON string, parse it
