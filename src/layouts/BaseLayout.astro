@@ -39,7 +39,14 @@ const userId = Astro.locals.user?.id ?? null;
           OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({ appId, notifyButton: { enable: false }, autoResubscribe: true });
             if (userId) {
-              await OneSignal.login(String(userId));
+              const onesignalId = OneSignal.User.onesignalId;
+              if (onesignalId) {
+                fetch('/api/link-push', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ onesignalId }),
+                }).catch(() => {});
+              }
             }
           });
         </script>

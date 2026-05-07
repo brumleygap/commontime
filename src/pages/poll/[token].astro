@@ -1758,6 +1758,14 @@ function cellColor(av: number | undefined): string {
       btn.addEventListener('click', async () => {
         await OneSignal.Notifications.requestPermission();
         update();
+        const onesignalId = OneSignal.User.onesignalId;
+        if (onesignalId) {
+          fetch('/api/link-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ onesignalId }),
+          }).catch(() => {});
+        }
       });
     });
   </script>
