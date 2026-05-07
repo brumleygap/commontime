@@ -6,27 +6,35 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return new Response(null, { status: 401 });
   }
 
-  let onesignalId: string;
+  let token: string;
   try {
-    ({ onesignalId } = await request.json());
+    ({ token } = await request.json());
   } catch {
     return new Response(null, { status: 400 });
   }
 
-  if (!onesignalId || typeof onesignalId !== "string") {
+  if (!token || typeof token !== "string") {
     return new Response(null, { status: 400 });
   }
 
+  // POST /users with both identity and subscription token.
+  // Per OneSignal docs: "If any subscriptions already exist with any subscription
+  // identifiers in the request, those subscriptions will be linked to the new user."
+  // This finds the existing subscription by token and associates external_id with it,
+  // bypassing the SDK's broken local identity state entirely.
   const res = await fetch(
-    `https://api.onesignal.com/apps/${env.ONESIGNAL_APP_ID}/users/by/onesignal_id/${onesignalId}/identity`,
+    `https://api.onesignal.com/apps/${env.ONESIGNAL_APP_ID}/users`,
     {
-      method: "PATCH",
+      method: "POST",
       headers: {
         Authorization: `Key ${env.ONESIGNAL_API_KEY}`,
         "Content-Type": "application/json",
         Accept: "application/vnd.onesignal.v1+json",
       },
-      body: JSON.stringify({ identity: { external_id: String(locals.user.id) } }),
+      body: JSON.stringify({
+        identity: { external_id: String(locals.user.id) },
+        subscriptions: [{ type: "ChromePush", token, enabled: true }],
+      }),
     }
   );
 
