@@ -45,7 +45,7 @@ const userId = Astro.locals.user?.id ?? null;
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ token }),
-                }).catch(() => {});
+                }).then(r => r.ok ? null : r.json().then(e => console.error('link-push error:', e))).catch(console.error);
               }
             }
           });
