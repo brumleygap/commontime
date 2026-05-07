@@ -37,7 +37,7 @@ const userId = Astro.locals.user?.id ?? null;
         <script define:vars={{ appId, userId }} is:inline>
           window.OneSignalDeferred = window.OneSignalDeferred || [];
           OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({ appId, notifyButton: { enable: false } });
+            await OneSignal.init({ appId, notifyButton: { enable: false }, autoResubscribe: true });
             if (userId) {
               await OneSignal.login(String(userId));
             }
