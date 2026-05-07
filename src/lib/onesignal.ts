@@ -15,7 +15,7 @@ export async function sendPushToUsers(
         },
         body: JSON.stringify({
             app_id: appId,
-            include_external_user_ids: userIds.map(String),
+            include_external_user_ids: userIds.map(id => `ct_${id}`),
             headings: { en: title },
             contents: { en: body },
             url,

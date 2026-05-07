@@ -32,7 +32,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         Accept: "application/vnd.onesignal.v1+json",
       },
       body: JSON.stringify({
-        identity: { external_id: String(locals.user.id) },
+        identity: { external_id: `ct_${locals.user.id}` },
         subscriptions: [{ type: "ChromePush", token, enabled: true }],
       }),
     }
