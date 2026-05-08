@@ -118,7 +118,8 @@ interface D1Queryable {
   prepare(sql: string): { bind(...args: unknown[]): { all<T>(): Promise<{ results: T[] }> } };
 }
 
-async function sendOne(sub: WebPushSubscription, payload: object, vapid: VapidKeys): Promise<void> {
+// Returns true if the subscription is gone (410/404) and should be deleted.
+async function sendOne(sub: WebPushSubscription, payload: object, vapid: VapidKeys): Promise<boolean> {
   const body = await encryptPayload(
     enc(JSON.stringify(payload)),
     sub.p256dh,
@@ -138,11 +139,14 @@ async function sendOne(sub: WebPushSubscription, payload: object, vapid: VapidKe
     body,
   });
 
+  if (res.status === 410 || res.status === 404) {
+    console.log(`Web push expired [${res.status}] ${sub.endpoint.slice(0, 60)} — will delete`);
+    return true;
+  }
   if (!res.ok && res.status !== 201) {
     console.error(`Web push failed [${res.status}] ${sub.endpoint.slice(0, 60)}:`, await res.text());
-  } else {
-    console.log(`Web push ok [${res.status}] ${sub.endpoint.slice(0, 60)}`);
   }
+  return false;
 }
 
 export async function sendPushToUsers(
@@ -160,5 +164,21 @@ export async function sendPushToUsers(
     .bind(...userIds)
     .all<WebPushSubscription>();
   if (!rows.results.length) return;
-  await Promise.allSettled(rows.results.map(sub => sendOne(sub, { title, body, url }, vapid)));
+
+  const results = await Promise.allSettled(
+    rows.results.map(sub => sendOne(sub, { title, body, url }, vapid)),
+  );
+
+  // Delete any subscriptions the push service reports as expired.
+  const expired = rows.results.filter((_, i) => {
+    const r = results[i];
+    return r.status === "fulfilled" && r.value === true;
+  });
+  if (expired.length > 0) {
+    await Promise.allSettled(
+      expired.map(sub =>
+        db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(sub.endpoint).run(),
+      ),
+    );
+  }
 }
