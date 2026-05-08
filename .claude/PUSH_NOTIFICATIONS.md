@@ -5,78 +5,120 @@
 | Platform | Status |
 |---|---|
 | Mac Chrome | Working ✅ |
-| Android Chrome (Pixel 8) | Fixed — needs re-subscribe after 2026-05-08 deploy ✅ |
+| Android Chrome (Pixel 8) | Working ✅ |
 | Android PWA (Pixel 8) | Working ✅ |
-| iOS/iPadOS PWA | Implemented — untested |
+| iOS/iPadOS PWA | Working ✅ |
 | iOS/iPadOS browser (Safari) | Not supported (Apple limitation) |
 
-Poll events: confirm, cancel, reopen all trigger pushes ✅
+Poll events that trigger pushes: date confirmed, poll cancelled, poll reopened, new dates posted, someone voted ✅
+
+**OneSignal has been removed entirely.** Delivery is now direct Web Push Protocol (RFC 8291 + RFC 8292) using our own VAPID keys. Subscriptions are stored in D1.
 
 ---
 
 ## Architecture
 
-### Client side
-- `BaseLayout.astro`: loads OneSignal SDK, calls `/api/link-push` on every page load if a push subscription exists (idempotent re-link)
-- `poll/[token].astro`: "Get notified" / "Notifications on" button. Runs as an immediate IIFE (no SDK dependency). On click: fetches VAPID key from `/api/push-config`, uses **native Push APIs** to subscribe, then calls `/api/link-push`
-- Button state checked via `pushManager.getSubscription()` directly — not via SDK state
+### Subscribe button
+Lives on the **Scheduling Polls page** (`src/pages/index.astro`) — future plan to keep it there since subscriptions are user-level, not poll-level.
 
-### Server side
-- `/api/push-config.ts`: GET endpoint (auth required). Calls OneSignal REST API to return the VAPID public key (`chrome_web_key` field). Used so the client never depends on SDK-internal state for the key.
-- `/api/link-push.ts`: POST endpoint. Accepts `{ token, web_p256, web_auth }`. Calls `POST /apps/{appId}/users` on OneSignal. Auto-detects subscription type: `SafariPush` for `web.push.apple.com` endpoints (iOS PWA), `ChromePush` for all others.
-- `src/lib/onesignal.ts`: `sendPushToUsers(userIds, title, body, url, appId, apiKey)` calls `POST onesignal.com/api/v1/notifications` with `include_external_user_ids: userIds.map(id => "ct_" + id)`
+Button behaviour (IIFE, no SDK dependency):
+1. Checks `pushManager.getSubscription()` on `/push-sw.js` registration → shows "Notifications on" or "Get notified"
+2. On click: fetches VAPID public key from `/api/push-config`, calls `Notification.requestPermission()`, then `pushManager.subscribe()` with the key
+3. Sends `{ token, web_p256, web_auth, old_token }` to `POST /api/link-push`
+4. Shows "Subscribing…" → "✓ Subscribed" (+ 50ms vibrate on Android) → settles to "Notifications on"
 
-### Cloudflare secrets
-- `ONESIGNAL_API_KEY`: REST API key for the Commontime App
-- `ONESIGNAL_APP_ID`: `aa130f13-2b68-4874-96bb-02db7d514eae`
+On iOS browser (not PWA), shows message: *"On iOS, install as app first: Safari → Add to Home Screen."*
+
+### Service worker (`public/push-sw.js`)
+- Registered from `BaseLayout.astro` on every page load
+- On load, BaseLayout evicts any old OneSignal SW before registering ours
+- `install` event: `skipWaiting()` — activates immediately, no waiting
+- `activate` event: `clients.claim()` — takes over all open pages
+- `push` event: parses JSON payload `{ title, body, url }`, calls `showNotification`
+- `notificationclick` event: focuses existing window or opens new one at `data.url`
+- `pushsubscriptionchange` event: auto-resubscribes and re-links via `/api/link-push`
+
+### Server endpoints
+
+**`GET /api/push-config`** (auth required)
+Returns `{ vapidPublicKey }` from `env.VAPID_PUBLIC_KEY`. Client uses this to call `pushManager.subscribe()` without depending on SDK state.
+
+**`POST /api/link-push`** (auth required)
+Accepts `{ token, web_p256, web_auth, old_token? }`.
+- Deletes old subscription from D1 if `old_token` is present
+- Upserts new subscription into `push_subscriptions` table
+
+**`src/lib/webpush.ts`**
+Implements Web Push Protocol from scratch using Web Crypto API (Workers-compatible, no Buffer):
+- `sendPushToUsers(userIds, title, body, url, db, vapid)` — queries D1 for subscriptions, sends to each
+- `sendOne(sub, payload, vapid)` — encrypts payload (RFC 8291 aes128gcm) and sends with VAPID auth (RFC 8292)
+- Returns `true` if push service responds 410/404 (subscription expired) → caller deletes from D1
+- Encryption: ECDH key agreement → two-stage HKDF → AES-128-GCM, all via `crypto.subtle`
+- VAPID: ES256 JWT signed with our private key, audience = push endpoint origin
+
+### D1 schema (`migrations/0014_push_subscriptions.sql`)
+```sql
+CREATE TABLE push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+```
+
+### Cloudflare config
+- **Secret** `VAPID_PRIVATE_KEY`: base64url-encoded P-256 private key (set via `wrangler secret put`)
+- **Var** `VAPID_PUBLIC_KEY`: `BK8QaMA__Heb7Dw2q8Os_XhCaHV0Eb-eHXSR_OJ4q9R5FOr0N0Os19-xzAs2uYLu-T6lnFRj0RjSlVkyJASc1g8`
+- **Var** `VAPID_SUBJECT`: `mailto:ernie.braganza@gmail.com`
 
 ---
 
 ## iOS / iPadOS
 
-Push notifications on iOS/iPadOS **only work when installed as a PWA** (iOS 16.4+). Safari browser does not support web push.
+Push notifications **only work when installed as a PWA** (iOS 16.4+). Safari browser does not support web push.
 
 To subscribe on iPhone/iPad:
 1. Open `commontime.app` in Safari
-2. Tap the Share button → **Add to Home Screen**
-3. Open the app from the home screen icon
-4. Navigate to a poll and tap **Get notified**
+2. Share button → **Add to Home Screen**
+3. Open from the home screen icon
+4. Go to Scheduling Polls and tap **Get notified**
 
-When a user taps the button in Safari browser (not PWA), the button shows:
-*"On iOS, install as app first: Safari share button → Add to Home Screen."*
-
-The subscription type sent to OneSignal is automatically detected:
-- `web.push.apple.com` endpoint → `SafariPush`
-- FCM endpoint → `ChromePush`
+Key iOS gotchas discovered during implementation:
+- **Service worker must be the active SW** — if a stale SW is in "waiting" state, the push event goes to the old SW which can't parse our payload. `skipWaiting()` in the install event fixes this; BaseLayout also evicts old OneSignal SWs explicitly.
+- **Subscription must be created under the active SW** — subscribing while the old SW is still active creates a subscription that gets orphaned when the SW changes. Users must re-subscribe after a major SW transition.
+- **iOS PWA requires background** — notifications show on lock screen and notification center. They don't show as banners when the PWA is in foreground.
+- **Apple returns 201** even for some failed deliveries — 201 = accepted by Apple servers, not guaranteed delivery to device.
+- **Icon must be RGB PNG** (no alpha channel) — even a fully-opaque RGBA PNG is rendered black on black on the iOS home screen. Use Pillow with `.convert("RGB")` when generating icons.
 
 ---
 
-## OneSignal app
+## Stale subscription cleanup
 
-**Commontime App** — `aa130f13-2b68-4874-96bb-02db7d514eae`
+Subscriptions go stale when:
+- The service worker changes significantly (user must re-subscribe)
+- The browser clears storage
+- The OS rotates push credentials
 
-External ID format: `ct_1` (prefixed — bare integers are blocked by OneSignal)
+Automatic cleanup:
+1. **410/404 on delivery** → `sendOne` returns `true` → `sendPushToUsers` deletes endpoint from D1
+2. **`pushsubscriptionchange`** in push-sw.js → browser re-subscribes and re-links automatically
+
+Manual fallback: user taps the subscribe button again to re-register.
 
 ---
 
 ## Key gotchas
 
-- **External IDs must be prefixed**: OneSignal blocks bare short integers like `"1"`. Use `"ct_1"` format. Applied in both `link-push.ts` (registration) and `sendPushToUsers` (delivery).
+- **OneSignal can't deliver to iOS 16.4+ web push endpoints**: `ChromePush` routes via FCM (can't reach `web.push.apple.com`). `SafariPush` is for legacy macOS APNS-cert push, not VAPID. Neither type works. Solution: bypass OneSignal for delivery entirely.
 
-- **Don't use `autoResubscribe: true`**: Causes the SDK to unsubscribe existing push tokens on Android page load when it detects a VAPID key mismatch, then fails to resubscribe (no user gesture). Net result: unsubscribed with nothing created.
+- **VAPID key from SDK is unreliable**: `window.OneSignal?.config?.vapidPublicKey` is SDK-internal state, never populated on Android or iOS. Fetch `/api/push-config` instead.
 
-- **Don't use `OneSignal.Notifications.requestPermission()` for the button**: It calls `Ae()` which waits for `SDK_INITIALIZED`. On Android, if `init()` fails silently, `Ae()` hangs forever. Use native `Notification.requestPermission()` + `PushManager.subscribe()`.
+- **Uint8Array must be `Uint8Array<ArrayBuffer>`** in Workers: `Uint8Array.from(...)` returns `Uint8Array<ArrayBufferLike>` which is rejected by Web Crypto. Use `new Uint8Array(n)` + manual fill, or `new Uint8Array(arrayBuffer)` to wrap results.
 
-- **Don't read `window.OneSignal?.config?.vapidPublicKey`**: SDK-internal state, unreliable on Android and iOS. Fetch `/api/push-config` instead, which returns the VAPID key from the OneSignal REST API.
+- **Push banner only on `commontime.app`** — hostname check in the subscribe script prevents it from running on preview deployments.
 
-- **Don't rely on `OneSignal.User.PushSubscription.token` for button state**: On Android, always null. Use `pushManager.getSubscription()` directly.
+- **Preview environment has no push configured** — `VAPID_PRIVATE_KEY` is not set in preview; `sendPushToUsers` will find no subscriptions in the preview DB anyway.
 
-- **`web_p256` and `web_auth` are required**: Without the p256dh/auth encryption keys, OneSignal marks the subscription as "Never Subscribed" and excludes it from send audiences.
-
-- **Bedtime mode on Android**: Silences all notifications. Not a code issue.
-
-- **OneSignal SDK v16.6.3 has unfixed `login()` bugs**: Issue #1185 (race condition, external_id not synced). The entire `login()` path was bypassed in favour of the server-side `/api/link-push` approach.
-
-- **Push banner only appears on `commontime.app`** — not preview deployments (intentional).
-
-- **Preview environment** (`commontime-preview`) has no push notifications configured. A separate OneSignal app would be needed for that.
+- **Bedtime mode on Android** silences all notifications. Not a code issue.
