@@ -1768,17 +1768,20 @@ function cellColor(av: number | undefined): string {
             return;
           }
 
+          btn.disabled = true;
+          btn.textContent = 'Subscribing…';
+
           const configRes = await fetch('/api/push-config');
-          if (!configRes.ok) return;
+          if (!configRes.ok) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
           const { vapidPublicKey } = await configRes.json();
-          if (!vapidPublicKey) return;
+          if (!vapidPublicKey) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
 
           const permission = await Notification.requestPermission();
-          if (permission !== 'granted') return;
+          if (permission !== 'granted') { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
 
           let reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
           if (!reg) reg = await navigator.serviceWorker.register('/OneSignalSDKWorker.js');
-          if (!reg) return;
+          if (!reg) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
 
           const keyBytes = Uint8Array.from(
             atob(vapidPublicKey.replace(/-/g, '+').replace(/_/g, '/')),
@@ -1792,21 +1795,29 @@ function cellColor(av: number | undefined): string {
             applicationServerKey: keyBytes.buffer,
           });
 
-          if (!sub?.endpoint) return;
+          if (!sub?.endpoint) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
 
-          setSubscribed(true);
+          btn.textContent = '✓ Subscribed';
+          btn.style.borderColor = 'var(--green)';
+          btn.style.color = 'var(--green)';
+          status.textContent = "You'll be notified of poll updates.";
+          navigator.vibrate?.(50);
+          setTimeout(() => { btn.disabled = false; setSubscribed(true); }, 1500);
 
           const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
-          const web_p256 = toB64(sub.getKey?.('p256dh'));
-          const web_auth  = toB64(sub.getKey?.('auth'));
-
           fetch('/api/link-push', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: sub.endpoint, web_p256, web_auth }),
+            body: JSON.stringify({
+              token: sub.endpoint,
+              web_p256: toB64(sub.getKey?.('p256dh')),
+              web_auth: toB64(sub.getKey?.('auth')),
+            }),
           }).catch(() => {});
         } catch(e) {
           console.error('Push subscribe error:', e);
+          btn.disabled = false;
+          setSubscribed(await isSubscribed());
         }
       });
     })();
