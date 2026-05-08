@@ -37,16 +37,21 @@ const userId = Astro.locals.user?.id ?? null;
         <script define:vars={{ appId, userId }} is:inline>
           window.OneSignalDeferred = window.OneSignalDeferred || [];
           OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({ appId, notifyButton: { enable: false }, autoResubscribe: true });
+            await OneSignal.init({ appId, notifyButton: { enable: false } });
             if (userId) {
-              const token = OneSignal.User.PushSubscription.token;
-              if (token) {
-                fetch('/api/link-push', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ token }),
-                }).then(r => r.ok ? null : r.json().then(e => console.error('link-push error:', e))).catch(console.error);
-              }
+              // Use actual browser subscription state — SDK token is unreliable
+              // on Android when bypassing the SDK's subscription flow.
+              navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js')
+                .then(reg => reg?.pushManager.getSubscription())
+                .then(sub => {
+                  if (sub?.endpoint) {
+                    fetch('/api/link-push', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ token: sub.endpoint }),
+                    }).catch(() => {});
+                  }
+                }).catch(() => {});
             }
           });
         </script>
