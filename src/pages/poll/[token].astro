@@ -1756,26 +1756,46 @@ function cellColor(av: number | undefined): string {
       update();
 
       btn.addEventListener('click', async () => {
-        // If no active subscription, clear any stale browser push registration first
-        // so the SDK can create a fresh one (handles VAPID key mismatches on Android)
-        if (!OneSignal.User.PushSubscription.token) {
-          try {
-            const regs = await navigator.serviceWorker.getRegistrations();
-            for (const reg of regs) {
-              const sub = await reg.pushManager.getSubscription();
-              if (sub) await sub.unsubscribe();
-            }
-          } catch(e) {}
-        }
-        await OneSignal.Notifications.requestPermission();
-        update();
-        const pushToken = OneSignal.User.PushSubscription.token;
-        if (pushToken) {
+        // Bypass OneSignal.Notifications.requestPermission() — it calls Ae() which
+        // waits for SDK_INITIALIZED. If Android init failed silently, it hangs forever.
+        // Instead, use native Push APIs directly with the VAPID key from the SDK config.
+        try {
+          const vapidKey = window.OneSignal?.config?.vapidPublicKey;
+          if (!vapidKey) return;
+
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') return;
+
+          const reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
+          if (!reg) return;
+
+          const keyBytes = Uint8Array.from(
+            atob(vapidKey.replace(/-/g, '+').replace(/_/g, '/')),
+            c => c.charCodeAt(0)
+          );
+
+          // Clear any stale subscription, then create a fresh one
+          const old = await reg.pushManager.getSubscription();
+          if (old) await old.unsubscribe();
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: keyBytes.buffer,
+          });
+
+          if (!sub?.endpoint) return;
+
+          btn.textContent = 'Notifications on';
+          btn.style.borderColor = 'var(--green)';
+          btn.style.color = 'var(--green)';
+          status.textContent = "You'll be notified of poll updates.";
+
           fetch('/api/link-push', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: pushToken }),
+            body: JSON.stringify({ token: sub.endpoint }),
           }).catch(() => {});
+        } catch(e) {
+          console.error('Push subscribe error:', e);
         }
       });
     });
