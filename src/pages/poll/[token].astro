@@ -1793,10 +1793,16 @@ function cellColor(av: number | undefined): string {
 
           setSubscribed(true);
 
+          // Extract encryption keys — OneSignal needs these to encrypt the push payload.
+          // Without web_p256 and web_auth, subscriptions are excluded from the send audience.
+          const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
+          const web_p256 = toB64(sub.getKey?.('p256dh'));
+          const web_auth  = toB64(sub.getKey?.('auth'));
+
           fetch('/api/link-push', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: sub.endpoint }),
+            body: JSON.stringify({ token: sub.endpoint, web_p256, web_auth }),
           }).catch(() => {});
         } catch(e) {
           console.error('Push subscribe error:', e);

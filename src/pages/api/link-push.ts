@@ -6,9 +6,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return new Response(null, { status: 401 });
   }
 
-  let token: string;
+  let token: string, web_p256: string | null, web_auth: string | null;
   try {
-    ({ token } = await request.json());
+    ({ token, web_p256 = null, web_auth = null } = await request.json());
   } catch {
     return new Response(null, { status: 400 });
   }
@@ -33,7 +33,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       },
       body: JSON.stringify({
         identity: { external_id: `ct_${locals.user.id}` },
-        subscriptions: [{ type: "ChromePush", token, enabled: true, notification_types: 1 }],
+        subscriptions: [{ type: "ChromePush", token, enabled: true, notification_types: 1, web_p256, web_auth }],
       }),
     }
   );
