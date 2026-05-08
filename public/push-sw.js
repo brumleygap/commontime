@@ -1,3 +1,7 @@
+// Take over immediately so this SW handles push events instead of any old SW.
+self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+
 self.addEventListener('push', event => {
   const data = event.data?.json() ?? {};
   event.waitUntil(

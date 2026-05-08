@@ -140,6 +140,8 @@ async function sendOne(sub: WebPushSubscription, payload: object, vapid: VapidKe
 
   if (!res.ok && res.status !== 201) {
     console.error(`Web push failed [${res.status}] ${sub.endpoint.slice(0, 60)}:`, await res.text());
+  } else {
+    console.log(`Web push ok [${res.status}] ${sub.endpoint.slice(0, 60)}`);
   }
 }
 
