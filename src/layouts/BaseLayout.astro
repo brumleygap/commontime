@@ -30,7 +30,12 @@ const { title = "CommonTime" } = Astro.props;
     <AppFooter />
     <script is:inline>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/push-sw.js').catch(() => {});
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          const evict = regs.filter(r =>
+            [r.active, r.waiting, r.installing].some(sw => sw?.scriptURL.includes('OneSignal'))
+          );
+          return Promise.all(evict.map(r => r.unregister()));
+        }).then(() => navigator.serviceWorker.register('/push-sw.js')).catch(() => {});
       }
     </script>
   </body>

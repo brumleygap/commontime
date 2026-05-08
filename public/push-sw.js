@@ -9,7 +9,6 @@ self.addEventListener('push', event => {
     self.registration.showNotification(data.title ?? 'CommonTime', {
       body: data.body ?? '',
       icon: '/commontime-logo.png',
-      badge: '/commontime-logo.png',
       data: { url: data.url ?? '/' },
     })
   );
