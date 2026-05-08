@@ -5,6 +5,7 @@ self.addEventListener('activate', event => event.waitUntil(self.clients.claim())
 self.addEventListener('push', event => {
   let data = {};
   try { data = event.data?.json() ?? {}; } catch {}
+  fetch('/manifest.json').catch(() => {}); // diagnostic: confirms push event fired
   event.waitUntil(
     self.registration.showNotification(data.title ?? 'CommonTime', {
       body: data.body ?? '',
