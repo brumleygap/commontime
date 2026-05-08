@@ -5,8 +5,9 @@
   "start_url": "/",
   "display": "standalone",
   "theme_color": "#c8102e",
-  "background_color": "#f5f2ec",
+  "background_color": "#ffffff",
   "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
     { "src": "/commontime-logo.png", "sizes": "512x512", "type": "image/png" }
   ]
 }

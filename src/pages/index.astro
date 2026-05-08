@@ -180,7 +180,15 @@ if (user) {
           <p class="ct-eyebrow" style="margin-bottom: 2px;">Scheduling Polls</p>
           <p class="dash-sub">Polls you've created or responded to</p>
         </div>
-        <a href="/create" class="new-poll-btn">♩ Create a poll</a>
+        <div class="dash-header-actions">
+          <div id="push-banner" style="display:none" class="flex items-center gap-2 text-sm font-mono text-[var(--muted)]">
+            <button id="push-toggle" class="ct-eyebrow px-3 py-1 border border-[var(--staff)] rounded hover:border-[var(--muted)] transition-colors">
+              Get notified
+            </button>
+            <span id="push-status"></span>
+          </div>
+          <a href="/create" class="new-poll-btn">♩ Create a poll</a>
+        </div>
       </div>
 
       {myPolls.filter(p => !p.is_cancelled).length === 0 && myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) < 7).length === 0 ? (
@@ -379,6 +387,12 @@ if (user) {
     margin-bottom: 20px;
     padding-bottom: 14px;
     border-bottom: 2px solid var(--ink);
+  }
+  .dash-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
   }
 
   .dash-sub {
@@ -962,3 +976,93 @@ if (user) {
     });
   }
 </script>
+
+{user && (
+  <script is:inline>
+    (async function() {
+      const banner = document.getElementById('push-banner');
+      const btn = document.getElementById('push-toggle');
+      const status = document.getElementById('push-status');
+      if (!banner || !btn || !status) return;
+      if (window.location.hostname !== 'commontime.app') return;
+
+      async function isSubscribed() {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration('/push-sw.js');
+          const sub = await reg?.pushManager.getSubscription();
+          return !!sub?.endpoint;
+        } catch(e) { return false; }
+      }
+
+      function setSubscribed(subscribed) {
+        btn.textContent = subscribed ? 'Notifications on' : 'Get notified';
+        btn.style.borderColor = subscribed ? 'var(--green)' : '';
+        btn.style.color = subscribed ? 'var(--green)' : '';
+        status.textContent = '';
+      }
+
+      banner.style.display = '';
+      setSubscribed(await isSubscribed());
+
+      btn.addEventListener('click', async () => {
+        try {
+          if (!('PushManager' in window)) {
+            status.textContent = 'On iOS, install as app first: Safari → Add to Home Screen.';
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = 'Subscribing…';
+
+          const configRes = await fetch('/api/push-config');
+          if (!configRes.ok) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
+          const { vapidPublicKey } = await configRes.json();
+          if (!vapidPublicKey) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
+
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
+
+          let reg = await navigator.serviceWorker.getRegistration('/push-sw.js');
+          if (!reg) reg = await navigator.serviceWorker.register('/push-sw.js');
+          if (!reg) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
+
+          const keyBytes = Uint8Array.from(
+            atob(vapidPublicKey.replace(/-/g, '+').replace(/_/g, '/')),
+            c => c.charCodeAt(0)
+          );
+
+          const old = await reg.pushManager.getSubscription();
+          const oldEndpoint = old?.endpoint ?? null;
+          if (old) await old.unsubscribe();
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: keyBytes.buffer,
+          });
+
+          if (!sub?.endpoint) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
+
+          btn.textContent = '✓ Subscribed';
+          btn.style.borderColor = 'var(--green)';
+          btn.style.color = 'var(--green)';
+          navigator.vibrate?.(50);
+          setTimeout(() => { btn.disabled = false; setSubscribed(true); }, 1500);
+
+          const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
+          fetch('/api/link-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: sub.endpoint,
+              old_token: oldEndpoint,
+              web_p256: toB64(sub.getKey?.('p256dh')),
+              web_auth: toB64(sub.getKey?.('auth')),
+            }),
+          }).catch(() => {});
+        } catch(e) {
+          console.error('Push subscribe error:', e);
+          btn.disabled = false;
+          setSubscribed(await isSubscribed());
+        }
+      });
+    })();
+  </script>
+)}

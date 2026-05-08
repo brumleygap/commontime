@@ -283,6 +283,7 @@ function cellColor(av: number | undefined): string {
       <span class="ct-header-watermark">𝄴</span>
     </div>
     <div class="mx-auto max-w-5xl px-4 py-6 relative z-10">
+      {currentUser && <a href="/" class="poll-back">← Scheduling Polls</a>}
       <p class="poll-eyebrow">♩ Poll</p>
       <h1 class="poll-title">{poll.title}</h1>
       {poll.description && (
@@ -293,15 +294,6 @@ function cellColor(av: number | undefined): string {
 
   <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
 
-    <!-- ── Push notification opt-in (logged-in users only) ──────────────── -->
-    {currentUser && (
-      <div id="push-banner" style="display:none" class="flex items-center gap-3 text-sm font-mono text-[var(--muted)]">
-        <button id="push-toggle" class="ct-eyebrow px-3 py-1 border border-[var(--staff)] rounded hover:border-[var(--muted)] transition-colors">
-          Get notified
-        </button>
-        <span id="push-status"></span>
-      </div>
-    )}
 
     <!-- ── Cancelled banner / finalized banner / vote form ─────────────── -->
     {isCancelled ? (
@@ -705,6 +697,20 @@ function cellColor(av: number | undefined): string {
     pointer-events: none;
     user-select: none;
   }
+
+  .poll-back {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    margin-bottom: 10px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+  .poll-back:hover { opacity: 1; }
 
   .poll-eyebrow {
     font-family: 'DM Mono', monospace;
@@ -1734,94 +1740,3 @@ function cellColor(av: number | undefined): string {
   });
 </script>
 
-{currentUser && (
-  <script is:inline>
-    (async function() {
-      const banner = document.getElementById('push-banner');
-      const btn = document.getElementById('push-toggle');
-      const status = document.getElementById('push-status');
-      if (!banner || !btn || !status) return;
-      if (window.location.hostname !== 'commontime.app') return;
-
-      async function isSubscribed() {
-        try {
-          const reg = await navigator.serviceWorker.getRegistration('/push-sw.js');
-          const sub = await reg?.pushManager.getSubscription();
-          return !!sub?.endpoint;
-        } catch(e) { return false; }
-      }
-
-      function setSubscribed(subscribed) {
-        btn.textContent = subscribed ? 'Notifications on' : 'Get notified';
-        btn.style.borderColor = subscribed ? 'var(--green)' : '';
-        btn.style.color = subscribed ? 'var(--green)' : '';
-        status.textContent = subscribed ? 'You\'ll be notified of poll updates.' : '';
-      }
-
-      banner.style.display = '';
-      setSubscribed(await isSubscribed());
-
-      btn.addEventListener('click', async () => {
-        try {
-          if (!('PushManager' in window)) {
-            status.textContent = 'On iOS, install as app first: Safari share button → Add to Home Screen.';
-            return;
-          }
-
-          btn.disabled = true;
-          btn.textContent = 'Subscribing…';
-
-          const configRes = await fetch('/api/push-config');
-          if (!configRes.ok) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
-          const { vapidPublicKey } = await configRes.json();
-          if (!vapidPublicKey) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
-
-          const permission = await Notification.requestPermission();
-          if (permission !== 'granted') { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
-
-          let reg = await navigator.serviceWorker.getRegistration('/push-sw.js');
-          if (!reg) reg = await navigator.serviceWorker.register('/push-sw.js');
-          if (!reg) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
-
-          const keyBytes = Uint8Array.from(
-            atob(vapidPublicKey.replace(/-/g, '+').replace(/_/g, '/')),
-            c => c.charCodeAt(0)
-          );
-
-          const old = await reg.pushManager.getSubscription();
-          const oldEndpoint = old?.endpoint ?? null;
-          if (old) await old.unsubscribe();
-          const sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: keyBytes.buffer,
-          });
-
-          if (!sub?.endpoint) { btn.disabled = false; setSubscribed(await isSubscribed()); return; }
-
-          btn.textContent = '✓ Subscribed';
-          btn.style.borderColor = 'var(--green)';
-          btn.style.color = 'var(--green)';
-          status.textContent = "You'll be notified of poll updates.";
-          navigator.vibrate?.(50);
-          setTimeout(() => { btn.disabled = false; setSubscribed(true); }, 1500);
-
-          const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
-          fetch('/api/link-push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token: sub.endpoint,
-              old_token: oldEndpoint,
-              web_p256: toB64(sub.getKey?.('p256dh')),
-              web_auth: toB64(sub.getKey?.('auth')),
-            }),
-          }).catch(() => {});
-        } catch(e) {
-          console.error('Push subscribe error:', e);
-          btn.disabled = false;
-          setSubscribed(await isSubscribed());
-        }
-      });
-    })();
-  </script>
-)}
