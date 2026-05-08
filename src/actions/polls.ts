@@ -3,7 +3,7 @@ import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
 import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail } from "../lib/email";
-import { sendPushToUsers } from "../lib/onesignal";
+import { sendPushToUsers } from "../lib/webpush";
 
 function makeToken(length = 12) {
     const alphabet =
@@ -120,7 +120,7 @@ export const createPoll = defineAction({
                     );
 
                     const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
-                    await sendPushToUsers(pushUserIds, `New dates: ${title}`, "The organiser has started a new poll with new options.", newPollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+                    await sendPushToUsers(pushUserIds, `New dates: ${title}`, "The organiser has started a new poll with new options.", newPollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
                 }
             }
 
@@ -212,7 +212,7 @@ export const lockPoll = defineAction({
         });
 
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
-        await sendPushToUsers(pushUserIds, `It's happening: ${poll.title}`, "A date has been confirmed.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+        await sendPushToUsers(pushUserIds, `It's happening: ${poll.title}`, "A date has been confirmed.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
     },
@@ -359,7 +359,7 @@ export const cancelPoll = defineAction({
         });
 
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
-        await sendPushToUsers(pushUserIds, `Cancelled: ${poll.title}`, "The organiser has cancelled this event.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+        await sendPushToUsers(pushUserIds, `Cancelled: ${poll.title}`, "The organiser has cancelled this event.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
     },
@@ -418,7 +418,7 @@ export const uncancelPoll = defineAction({
         });
 
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
-        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
     },
@@ -477,7 +477,7 @@ export const unlockPoll = defineAction({
         });
 
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
-        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.ONESIGNAL_APP_ID, env.ONESIGNAL_API_KEY);
+        await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
     },

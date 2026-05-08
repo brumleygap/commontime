@@ -2,10 +2,7 @@
 import AppHeader from "../components/AppHeader.astro";
 import AppFooter from "../components/AppFooter.astro";
 import "../styles/global.css";
-import { env } from "cloudflare:workers";
 const { title = "CommonTime" } = Astro.props;
-const appId = env.ONESIGNAL_APP_ID ?? "";
-const userId = Astro.locals.user?.id ?? null;
 ---
 
 <!doctype html>
@@ -31,36 +28,5 @@ const userId = Astro.locals.user?.id ?? null;
       <slot />
     </main>
     <AppFooter />
-    {appId && (
-      <>
-        <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-        <script define:vars={{ appId, userId }} is:inline>
-          window.OneSignalDeferred = window.OneSignalDeferred || [];
-          OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({ appId, notifyButton: { enable: false } });
-            if (userId) {
-              // Use actual browser subscription state — SDK token is unreliable
-              // on Android when bypassing the SDK's subscription flow.
-              navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js')
-                .then(reg => reg?.pushManager.getSubscription())
-                .then(sub => {
-                  if (sub?.endpoint) {
-                    const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
-                    fetch('/api/link-push', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        token: sub.endpoint,
-                        web_p256: toB64(sub.getKey?.('p256dh')),
-                        web_auth:  toB64(sub.getKey?.('auth')),
-                      }),
-                    }).catch(() => {});
-                  }
-                }).catch(() => {});
-            }
-          });
-        </script>
-      </>
-    )}
   </body>
 </html>

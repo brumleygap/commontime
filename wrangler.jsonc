@@ -22,7 +22,8 @@
     "crons": ["0 7 * * *"]
   },
   "vars": {
-    "ONESIGNAL_APP_ID": "aa130f13-2b68-4874-96bb-02db7d514eae"
+    "VAPID_PUBLIC_KEY": "BK8QaMA__Heb7Dw2q8Os_XhCaHV0Eb-eHXSR_OJ4q9R5FOr0N0Os19-xzAs2uYLu-T6lnFRj0RjSlVkyJASc1g8",
+    "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com"
   },
   "services": [
     {
@@ -41,7 +42,8 @@
     "preview": {
       "name": "commontime-preview",
       "vars": {
-        "ONESIGNAL_APP_ID": "aa130f13-2b68-4874-96bb-02db7d514eae"
+        "VAPID_PUBLIC_KEY": "BK8QaMA__Heb7Dw2q8Os_XhCaHV0Eb-eHXSR_OJ4q9R5FOr0N0Os19-xzAs2uYLu-T6lnFRj0RjSlVkyJASc1g8",
+        "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com"
       },
       "d1_databases": [
         {

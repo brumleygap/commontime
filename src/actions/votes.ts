@@ -1,7 +1,7 @@
 import { defineAction, ActionError } from "astro:actions";
 import { env } from "cloudflare:workers";
 import { SubmitVoteSchema } from "./schemas/votes";
-import { sendPushToUsers } from "../lib/onesignal";
+import { sendPushToUsers } from "../lib/webpush";
 
 export const submitVote = defineAction({
     accept: "form",
@@ -122,8 +122,8 @@ export const submitVote = defineAction({
                     poll.title,
                     `${voterName} just voted.`,
                     `${origin}/poll/${input.token}`,
-                    env.ONESIGNAL_APP_ID,
-                    env.ONESIGNAL_API_KEY,
+                    env.DB,
+                    { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT },
                 );
             }
 
