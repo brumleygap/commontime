@@ -1745,17 +1745,28 @@ function cellColor(av: number | undefined): string {
       if (window.location.hostname !== 'commontime.app') return;
 
       function update() {
-        const granted = OneSignal.Notifications.permission;
-        btn.textContent = granted ? 'Notifications on' : 'Get notified';
-        btn.style.borderColor = granted ? 'var(--green)' : '';
-        btn.style.color = granted ? 'var(--green)' : '';
-        status.textContent = granted ? 'You\'ll be notified of poll updates.' : '';
+        const subscribed = OneSignal.Notifications.permission && !!OneSignal.User.PushSubscription.token;
+        btn.textContent = subscribed ? 'Notifications on' : 'Get notified';
+        btn.style.borderColor = subscribed ? 'var(--green)' : '';
+        btn.style.color = subscribed ? 'var(--green)' : '';
+        status.textContent = subscribed ? 'You\'ll be notified of poll updates.' : '';
       }
 
       banner.style.display = '';
       update();
 
       btn.addEventListener('click', async () => {
+        // If no active subscription, clear any stale browser push registration first
+        // so the SDK can create a fresh one (handles VAPID key mismatches on Android)
+        if (!OneSignal.User.PushSubscription.token) {
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) {
+              const sub = await reg.pushManager.getSubscription();
+              if (sub) await sub.unsubscribe();
+            }
+          } catch(e) {}
+        }
         await OneSignal.Notifications.requestPermission();
         update();
         const pushToken = OneSignal.User.PushSubscription.token;
