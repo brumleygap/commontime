@@ -704,13 +704,12 @@ function cellColor(av: number | undefined): string {
     font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--ink);
     text-decoration: none;
     margin-bottom: 10px;
-    opacity: 0.7;
-    transition: opacity 0.15s;
+    transition: color 0.15s;
   }
-  .poll-back:hover { opacity: 1; }
+  .poll-back:hover { color: var(--red); }
 
   .poll-eyebrow {
     font-family: 'DM Mono', monospace;
