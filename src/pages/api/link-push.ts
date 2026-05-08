@@ -34,7 +34,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       body: JSON.stringify({
         identity: { external_id: `ct_${locals.user.id}` },
         subscriptions: [{
-          type: token.includes("web.push.apple.com") ? "SafariPush" : "ChromePush",
+          type: "ChromePush",
           token, enabled: true, notification_types: 1, web_p256, web_auth,
         }],
       }),
