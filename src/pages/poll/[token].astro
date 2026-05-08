@@ -1763,6 +1763,11 @@ function cellColor(av: number | undefined): string {
 
       btn.addEventListener('click', async () => {
         try {
+          if (!('PushManager' in window)) {
+            status.textContent = 'On iOS, install as app first: Safari share button → Add to Home Screen.';
+            return;
+          }
+
           const configRes = await fetch('/api/push-config');
           if (!configRes.ok) return;
           const { vapidPublicKey } = await configRes.json();
@@ -1771,7 +1776,8 @@ function cellColor(av: number | undefined): string {
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') return;
 
-          const reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
+          let reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
+          if (!reg) reg = await navigator.serviceWorker.register('/OneSignalSDKWorker.js');
           if (!reg) return;
 
           const keyBytes = Uint8Array.from(
