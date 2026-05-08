@@ -115,7 +115,7 @@ export interface VapidKeys {
 
 // Minimal structural type — avoids importing D1Database in a module file.
 interface D1Queryable {
-  prepare(sql: string): { bind(...args: unknown[]): { all<T>(): Promise<{ results: T[] }> } };
+  prepare(sql: string): { bind(...args: unknown[]): { all<T>(): Promise<{ results: T[] }>; run(): Promise<unknown> } };
 }
 
 // Returns true if the subscription is gone (410/404) and should be deleted.
