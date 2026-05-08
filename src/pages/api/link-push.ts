@@ -39,9 +39,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
   );
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error("OneSignal link-push failed:", res.status, body);
-    return new Response(JSON.stringify({ status: res.status, body }), { status: 502 });
+    console.error("OneSignal link-push failed:", res.status, await res.text());
+    return new Response(null, { status: 502 });
   }
 
   return new Response(null, { status: 204 });

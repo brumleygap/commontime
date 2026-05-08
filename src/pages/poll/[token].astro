@@ -1736,8 +1736,7 @@ function cellColor(av: number | undefined): string {
 
 {currentUser && (
   <script is:inline>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
+    (async function() {
       const banner = document.getElementById('push-banner');
       const btn = document.getElementById('push-toggle');
       const status = document.getElementById('push-status');
@@ -1763,12 +1762,11 @@ function cellColor(av: number | undefined): string {
       setSubscribed(await isSubscribed());
 
       btn.addEventListener('click', async () => {
-        // Bypass OneSignal.Notifications.requestPermission() — it calls Ae() which
-        // waits for SDK_INITIALIZED. If Android init failed silently, it hangs forever.
-        // Instead, use native Push APIs directly with the VAPID key from the SDK config.
         try {
-          const vapidKey = window.OneSignal?.config?.vapidPublicKey;
-          if (!vapidKey) return;
+          const configRes = await fetch('/api/push-config');
+          if (!configRes.ok) return;
+          const { vapidPublicKey } = await configRes.json();
+          if (!vapidPublicKey) return;
 
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') return;
@@ -1777,11 +1775,10 @@ function cellColor(av: number | undefined): string {
           if (!reg) return;
 
           const keyBytes = Uint8Array.from(
-            atob(vapidKey.replace(/-/g, '+').replace(/_/g, '/')),
+            atob(vapidPublicKey.replace(/-/g, '+').replace(/_/g, '/')),
             c => c.charCodeAt(0)
           );
 
-          // Clear any stale subscription, then create a fresh one
           const old = await reg.pushManager.getSubscription();
           if (old) await old.unsubscribe();
           const sub = await reg.pushManager.subscribe({
@@ -1793,8 +1790,6 @@ function cellColor(av: number | undefined): string {
 
           setSubscribed(true);
 
-          // Extract encryption keys — OneSignal needs these to encrypt the push payload.
-          // Without web_p256 and web_auth, subscriptions are excluded from the send audience.
           const toB64 = buf => buf ? btoa(String.fromCharCode(...new Uint8Array(buf))) : null;
           const web_p256 = toB64(sub.getKey?.('p256dh'));
           const web_auth  = toB64(sub.getKey?.('auth'));
@@ -1808,6 +1803,6 @@ function cellColor(av: number | undefined): string {
           console.error('Push subscribe error:', e);
         }
       });
-    });
+    })();
   </script>
 )}
