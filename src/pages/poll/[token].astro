@@ -1744,8 +1744,15 @@ function cellColor(av: number | undefined): string {
       if (!banner || !btn || !status) return;
       if (window.location.hostname !== 'commontime.app') return;
 
-      function update() {
-        const subscribed = OneSignal.Notifications.permission && !!OneSignal.User.PushSubscription.token;
+      async function isSubscribed() {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration('/OneSignalSDKWorker.js');
+          const sub = await reg?.pushManager.getSubscription();
+          return !!sub?.endpoint;
+        } catch(e) { return false; }
+      }
+
+      function setSubscribed(subscribed) {
         btn.textContent = subscribed ? 'Notifications on' : 'Get notified';
         btn.style.borderColor = subscribed ? 'var(--green)' : '';
         btn.style.color = subscribed ? 'var(--green)' : '';
@@ -1753,7 +1760,7 @@ function cellColor(av: number | undefined): string {
       }
 
       banner.style.display = '';
-      update();
+      setSubscribed(await isSubscribed());
 
       btn.addEventListener('click', async () => {
         // Bypass OneSignal.Notifications.requestPermission() — it calls Ae() which
@@ -1784,10 +1791,7 @@ function cellColor(av: number | undefined): string {
 
           if (!sub?.endpoint) return;
 
-          btn.textContent = 'Notifications on';
-          btn.style.borderColor = 'var(--green)';
-          btn.style.color = 'var(--green)';
-          status.textContent = "You'll be notified of poll updates.";
+          setSubscribed(true);
 
           fetch('/api/link-push', {
             method: 'POST',
