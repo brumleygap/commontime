@@ -28,5 +28,10 @@ const { title = "CommonTime" } = Astro.props;
       <slot />
     </main>
     <AppFooter />
+    <script is:inline>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/push-sw.js').catch(() => {});
+      }
+    </script>
   </body>
 </html>
