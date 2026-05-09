@@ -19,7 +19,7 @@ Poll events that trigger pushes: date confirmed, poll cancelled, poll reopened, 
 ## Architecture
 
 ### Subscribe button
-Lives on the **Scheduling Polls page** (`src/pages/index.astro`) — future plan to keep it there since subscriptions are user-level, not poll-level.
+Lives on the **Scheduling Polls page** (`src/pages/index.astro`).
 
 Button behaviour (IIFE, no SDK dependency):
 1. Checks `pushManager.getSubscription()` on `/push-sw.js` registration → shows "Notifications on" or "Get notified"
@@ -34,14 +34,14 @@ On iOS browser (not PWA), shows message: *"On iOS, install as app first: Safari 
 - On load, BaseLayout evicts any old OneSignal SW before registering ours
 - `install` event: `skipWaiting()` — activates immediately, no waiting
 - `activate` event: `clients.claim()` — takes over all open pages
-- `push` event: parses JSON payload `{ title, body, url }`, calls `showNotification`
-- `notificationclick` event: focuses existing window or opens new one at `data.url`
+- `push` event: parses JSON payload `{ title, body, url, image?, actions? }`, calls `showNotification`
+- `notificationclick` event: if an action button was tapped, opens that button's URL; otherwise opens `data.url`; focuses existing window or opens new one
 - `pushsubscriptionchange` event: auto-resubscribes and re-links via `/api/link-push`
 
 ### Server endpoints
 
 **`GET /api/push-config`** (auth required)
-Returns `{ vapidPublicKey }` from `env.VAPID_PUBLIC_KEY`. Client uses this to call `pushManager.subscribe()` without depending on SDK state.
+Returns `{ vapidPublicKey }` from `env.VAPID_PUBLIC_KEY`.
 
 **`POST /api/link-push`** (auth required)
 Accepts `{ token, web_p256, web_auth, old_token? }`.
@@ -50,7 +50,7 @@ Accepts `{ token, web_p256, web_auth, old_token? }`.
 
 **`src/lib/webpush.ts`**
 Implements Web Push Protocol from scratch using Web Crypto API (Workers-compatible, no Buffer):
-- `sendPushToUsers(userIds, title, body, url, db, vapid)` — queries D1 for subscriptions, sends to each
+- `sendPushToUsers(userIds, title, body, url, db, vapid, image?, actions?)` — queries D1 for subscriptions, sends to each
 - `sendOne(sub, payload, vapid)` — encrypts payload (RFC 8291 aes128gcm) and sends with VAPID auth (RFC 8292)
 - Returns `true` if push service responds 410/404 (subscription expired) → caller deletes from D1
 - Encryption: ECDH key agreement → two-stage HKDF → AES-128-GCM, all via `crypto.subtle`
@@ -75,6 +75,65 @@ CREATE TABLE push_subscriptions (
 
 ---
 
+## Admin push notifications
+
+Accessible at `commontime.app/admin/push` (admin email only). Linked from the site header when logged in as `ernie.braganza@gmail.com`. Server-side redirect to `/` for anyone else.
+
+### Form fields
+- **Title** and **Message** — required
+- **Link URL** — optional, defaults to `/`
+- **Image** — file upload (JPEG/PNG/GIF/WebP, stored in R2) or paste a URL; shown on Android/Chrome only, iOS silently ignores it
+- **Audience** — three modes:
+  - *All subscribers* — everyone with a push subscription
+  - *Specific poll* — all subscribers who are participants on a chosen poll; dropdown shows subscriber count
+  - *Non-responders* — subscribers on a chosen poll who have cast zero votes; dropdown shows "X/Y responding" so you can see urgency at a glance
+- **Action buttons** — up to 2 optional rows (label + URL each); appear as tappable buttons on Android/Chrome; iOS silently ignores them
+
+### Audience: Non-responders
+A non-responder has `user_id` set (logged-in) and no rows in `votes` for that poll — they haven't touched a single slot. Anonymous participants are excluded (no `user_id`, unreachable). The X/Y count is relative to participants who have push subscriptions.
+
+### Image upload flow
+1. User selects a file → JS POSTs to `/api/admin/upload-image`
+2. Server stores in R2 as `push/{timestamp}-{uuid}.ext`
+3. Returns a URL via the `/api/admin/media/[...key]` proxy endpoint (bucket is private; proxy adds 1-year cache header)
+4. URL is written into the hidden `image` form field and passed through to the push payload
+
+### Action buttons
+Stored as `PushAction[]` (`{ action, title, url }`) in the payload. The SW routes `notificationclick` to the tapped button's URL, falling back to the notification's main URL. iOS silently ignores them.
+
+### Admin files
+
+| File | Purpose |
+|---|---|
+| `src/pages/admin/push.astro` | Compose UI — audience radios, poll dropdown, image upload, action buttons |
+| `src/pages/api/admin/upload-image.ts` | R2 upload endpoint |
+| `src/pages/api/admin/media/[...key].ts` | R2 proxy/serve endpoint |
+| `src/actions/admin.ts` | `sendAdminPush` Astro action — audience queries, action button assembly |
+| `src/components/AppHeader.astro` | Admin nav link (admin email only) |
+| `wrangler.jsonc` | `MEDIA` R2 binding (both envs) |
+| `src/env.d.ts` | `MEDIA: R2Bucket` added to Env |
+
+**R2 bucket:** `commontime-media` — created 2026-05-09, ENAM region.
+
+---
+
+## What web push can and can't do
+
+**Can control:**
+- Title, body text, URL on click
+- Large image below text (Chrome/Android only; iOS silently ignores)
+- Action buttons (up to 2, Android/Chrome only) — each opens a specific URL
+- Tag — replace/update an existing notification silently
+- Vibration (Android only)
+
+**Cannot control:**
+- Notification size or layout (OS-controlled)
+- Custom HTML inside the notification
+- True interactive input (e.g. text reply) within the notification
+- Guaranteed delivery timing
+
+---
+
 ## iOS / iPadOS
 
 Push notifications **only work when installed as a PWA** (iOS 16.4+). Safari browser does not support web push.
@@ -85,12 +144,14 @@ To subscribe on iPhone/iPad:
 3. Open from the home screen icon
 4. Go to Scheduling Polls and tap **Get notified**
 
-Key iOS gotchas discovered during implementation:
-- **Service worker must be the active SW** — if a stale SW is in "waiting" state, the push event goes to the old SW which can't parse our payload. `skipWaiting()` in the install event fixes this; BaseLayout also evicts old OneSignal SWs explicitly.
-- **Subscription must be created under the active SW** — subscribing while the old SW is still active creates a subscription that gets orphaned when the SW changes. Users must re-subscribe after a major SW transition.
-- **iOS PWA requires background** — notifications show on lock screen and notification center. They don't show as banners when the PWA is in foreground.
-- **Apple returns 201** even for some failed deliveries — 201 = accepted by Apple servers, not guaranteed delivery to device.
-- **Icon must be RGB PNG** (no alpha channel) — even a fully-opaque RGBA PNG is rendered black on black on the iOS home screen. Use Pillow with `.convert("RGB")` when generating icons.
+**Any change to `public/push-sw.js` orphans existing iOS subscriptions.** iOS ties the subscription to the specific SW script. Users must tap the subscribe button again to re-subscribe. Android and Mac Chrome handle SW updates without losing the subscription. Avoid touching `push-sw.js` unnecessarily.
+
+Key iOS gotchas:
+- **Service worker must be the active SW** — `skipWaiting()` in the install event fixes stale SW issues; BaseLayout also evicts old OneSignal SWs explicitly
+- **Subscription must be created under the active SW** — users must re-subscribe after a major SW transition
+- **iOS PWA requires background** — notifications show on lock screen and notification center, not as banners when the PWA is in foreground
+- **Apple returns 201** even for some failed deliveries — 201 = accepted by Apple servers, not guaranteed delivery to device
+- **Icon must be RGB PNG** (no alpha channel) — even fully-opaque RGBA renders black on black on the iOS home screen
 
 ---
 
@@ -111,14 +172,25 @@ Manual fallback: user taps the subscribe button again to re-register.
 
 ## Key gotchas
 
-- **OneSignal can't deliver to iOS 16.4+ web push endpoints**: `ChromePush` routes via FCM (can't reach `web.push.apple.com`). `SafariPush` is for legacy macOS APNS-cert push, not VAPID. Neither type works. Solution: bypass OneSignal for delivery entirely.
+- **OneSignal can't deliver to iOS 16.4+ web push endpoints**: `ChromePush` routes via FCM (can't reach `web.push.apple.com`). `SafariPush` is for legacy macOS APNS-cert push, not VAPID. Neither type works.
 
 - **VAPID key from SDK is unreliable**: `window.OneSignal?.config?.vapidPublicKey` is SDK-internal state, never populated on Android or iOS. Fetch `/api/push-config` instead.
 
 - **Uint8Array must be `Uint8Array<ArrayBuffer>`** in Workers: `Uint8Array.from(...)` returns `Uint8Array<ArrayBufferLike>` which is rejected by Web Crypto. Use `new Uint8Array(n)` + manual fill, or `new Uint8Array(arrayBuffer)` to wrap results.
+
+- **`body` is a reserved Astro action field name** — use `message` instead, both in the Zod schema and the form.
+
+- **Zod `.optional()` receives null from form fields** — use `.nullish().transform(v => v || undefined)` for optional fields in `accept: "form"` actions.
 
 - **Push banner only on `commontime.app`** — hostname check in the subscribe script prevents it from running on preview deployments.
 
 - **Preview environment has no push configured** — `VAPID_PRIVATE_KEY` is not set in preview; `sendPushToUsers` will find no subscriptions in the preview DB anyway.
 
 - **Bedtime mode on Android** silences all notifications. Not a code issue.
+
+---
+
+## Future ideas
+- Rate limiting (e.g. max 3 sends per day)
+- Send history / audit log
+- Schedule a push for a future time
