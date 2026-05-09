@@ -12,7 +12,7 @@ export const sendAdminPush = defineAction({
         message: z.string().min(1, "Message is required"),
         url: z.string().nullish().transform(v => v || "/"),
         image: z.string().nullish().transform(v => v || undefined),
-        audience: z.enum(["all", "poll"]),
+        audience: z.enum(["all", "poll", "non_responders"]),
         poll_token: z.string().nullish().transform(v => v || undefined),
         action0_label: z.string().nullish().transform(v => v || undefined),
         action0_url: z.string().nullish().transform(v => v || undefined),
@@ -37,7 +37,7 @@ export const sendAdminPush = defineAction({
                 .prepare("SELECT DISTINCT user_id FROM push_subscriptions")
                 .all<{ user_id: number }>();
             userIds = rows.results.map((r: { user_id: number }) => r.user_id);
-        } else {
+        } else if (input.audience === "poll") {
             if (!input.poll_token?.trim()) {
                 throw new ActionError({ code: "BAD_REQUEST", message: "Poll token is required." });
             }
@@ -48,6 +48,24 @@ export const sendAdminPush = defineAction({
                     JOIN participants pa ON pa.user_id = ps.user_id
                     JOIN polls po ON po.id = pa.poll_id
                     WHERE po.token = ?
+                `)
+                .bind(input.poll_token.trim())
+                .all<{ user_id: number }>();
+            userIds = rows.results.map((r: { user_id: number }) => r.user_id);
+        } else {
+            if (!input.poll_token?.trim()) {
+                throw new ActionError({ code: "BAD_REQUEST", message: "Poll token is required." });
+            }
+            const rows = await env.DB
+                .prepare(`
+                    SELECT DISTINCT ps.user_id
+                    FROM push_subscriptions ps
+                    JOIN participants pa ON pa.user_id = ps.user_id
+                    JOIN polls po ON po.id = pa.poll_id
+                    LEFT JOIN votes v ON v.participant_id = pa.id
+                    WHERE po.token = ?
+                      AND pa.user_id IS NOT NULL
+                      AND v.id IS NULL
                 `)
                 .bind(input.poll_token.trim())
                 .all<{ user_id: number }>();
