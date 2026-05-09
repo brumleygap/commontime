@@ -5,19 +5,23 @@ self.addEventListener('activate', event => event.waitUntil(self.clients.claim())
 self.addEventListener('push', event => {
   let data = {};
   try { data = event.data?.json() ?? {}; } catch {}
-event.waitUntil(
+  const acts = (data.actions ?? []).map(a => ({ action: a.action, title: a.title }));
+  event.waitUntil(
     self.registration.showNotification(data.title ?? 'CommonTime', {
       body: data.body ?? '',
       icon: '/apple-touch-icon.png',
       ...(data.image ? { image: data.image } : {}),
-      data: { url: data.url ?? '/' },
+      ...(acts.length ? { actions: acts } : {}),
+      data: { url: data.url ?? '/', actions: data.actions ?? [] },
     })
   );
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = event.notification.data?.url ?? '/';
+  const notifActions = event.notification.data?.actions ?? [];
+  const clicked = notifActions.find(a => a.action === event.action);
+  const url = clicked?.url ?? event.notification.data?.url ?? '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const client of list) {

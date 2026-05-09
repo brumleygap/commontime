@@ -107,6 +107,20 @@ try {
         )}
       </div>
 
+      <div class="field-group">
+        <label class="field-label">Action buttons <span class="optional">(optional — up to 2; Android/Chrome only)</span></label>
+        <div class="action-rows">
+          <div class="action-row">
+            <input type="text" name="action0_label" class="field-input action-label" placeholder="Button 1 label" />
+            <input type="text" name="action0_url" class="field-input action-url" placeholder="https://..." />
+          </div>
+          <div class="action-row">
+            <input type="text" name="action1_label" class="field-input action-label" placeholder="Button 2 label" />
+            <input type="text" name="action1_url" class="field-input action-url" placeholder="https://..." />
+          </div>
+        </div>
+      </div>
+
       <button type="submit" class="ct-btn" id="submit-btn">Send notification</button>
     </form>
   </div>
@@ -194,4 +208,8 @@ try {
   .result-banner.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
   .result-banner.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
   .no-polls { font-size: 13px; color: var(--muted); margin: 0; }
+  .action-rows { display: flex; flex-direction: column; gap: 8px; }
+  .action-row { display: flex; gap: 8px; }
+  .action-label { flex: 0 0 160px; }
+  .action-url { flex: 1; }
 </style>

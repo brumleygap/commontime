@@ -149,6 +149,12 @@ async function sendOne(sub: WebPushSubscription, payload: object, vapid: VapidKe
   return false;
 }
 
+export interface PushAction {
+  action: string;
+  title: string;
+  url: string;
+}
+
 export async function sendPushToUsers(
   userIds: number[],
   title: string,
@@ -157,6 +163,7 @@ export async function sendPushToUsers(
   db: D1Queryable,
   vapid: VapidKeys,
   image?: string,
+  actions?: PushAction[],
 ): Promise<void> {
   if (userIds.length === 0) return;
   const placeholders = userIds.map(() => "?").join(",");
@@ -166,7 +173,9 @@ export async function sendPushToUsers(
     .all<WebPushSubscription>();
   if (!rows.results.length) return;
 
-  const payload = image ? { title, body, url, image } : { title, body, url };
+  const payload: Record<string, unknown> = { title, body, url };
+  if (image) payload.image = image;
+  if (actions?.length) payload.actions = actions;
 
   const results = await Promise.allSettled(
     rows.results.map(sub => sendOne(sub, payload, vapid)),

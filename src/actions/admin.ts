@@ -1,7 +1,7 @@
 import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
-import { sendPushToUsers } from "../lib/webpush";
+import { sendPushToUsers, type PushAction } from "../lib/webpush";
 
 const ADMIN_EMAIL = "ernie.braganza@gmail.com";
 
@@ -14,6 +14,10 @@ export const sendAdminPush = defineAction({
         image: z.string().nullish().transform(v => v || undefined),
         audience: z.enum(["all", "poll"]),
         poll_token: z.string().nullish().transform(v => v || undefined),
+        action0_label: z.string().nullish().transform(v => v || undefined),
+        action0_url: z.string().nullish().transform(v => v || undefined),
+        action1_label: z.string().nullish().transform(v => v || undefined),
+        action1_url: z.string().nullish().transform(v => v || undefined),
     }),
     handler: async (input, context) => {
         if (context.locals.user?.email !== ADMIN_EMAIL) {
@@ -50,6 +54,12 @@ export const sendAdminPush = defineAction({
             userIds = rows.results.map((r: { user_id: number }) => r.user_id);
         }
 
+        const actions: PushAction[] = [];
+        if (input.action0_label && input.action0_url)
+            actions.push({ action: "btn0", title: input.action0_label, url: input.action0_url });
+        if (input.action1_label && input.action1_url)
+            actions.push({ action: "btn1", title: input.action1_label, url: input.action1_url });
+
         await sendPushToUsers(
             userIds,
             input.title,
@@ -58,6 +68,7 @@ export const sendAdminPush = defineAction({
             env.DB,
             vapid,
             input.image || undefined,
+            actions.length ? actions : undefined,
         );
 
         return { ok: true, sent: userIds.length };
