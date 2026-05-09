@@ -10,10 +10,11 @@ Admin link visible in the site header when logged in as `ernie.braganza@gmail.co
 ## Requirements
 
 - Only `ernie.braganza@gmail.com` can send (hardcoded admin check)
-- Two audience modes: **All subscribers** or **Poll participants** (dropdown of active polls with subscriber counts)
+- Three audience modes: **All subscribers**, **Specific poll**, or **Non-responders on a poll**
 - Compose: title (required), message (required), URL (optional), image (optional)
 - Image: upload file (stored in R2, served via proxy) **or** paste a URL
 - Image renders on Chrome/Android; iOS receives the notification but silently ignores the image
+- Up to 2 action buttons per notification (label + URL each); Android/Chrome only, iOS ignores
 - No rate limiting or audit log for MVP
 
 ---
@@ -28,7 +29,14 @@ Form fields:
 - **Title** and **Message** — required
 - **Link URL** — optional, defaults to `/`
 - **Image** — file upload OR URL paste; upload is converted to URL via the upload endpoint before form submit
-- **Audience** — radio: All subscribers / Specific poll (reveals dropdown of active polls with subscriber counts)
+- **Audience** — radio with three options:
+  - *All subscribers* — everyone with a push subscription
+  - *Specific poll* — all subscribers who are participants on a chosen poll; dropdown shows subscriber count
+  - *Non-responders* — subscribers on a chosen poll who have cast zero votes; dropdown switches to "X/Y responding" label so you can see urgency at a glance
+- **Action buttons** — two optional rows, each with a label and URL; appear as tappable buttons on the notification
+
+### Audience: Non-responders
+A non-responder is a participant with `user_id` set (logged-in) and no rows in `votes` for that poll — i.e., they haven't touched a single slot. Anonymous participants are excluded (no `user_id`, unreachable by push). The "X/Y responding" label in the dropdown is relative to participants who have push subscriptions.
 
 ### Image upload flow
 1. User selects a file → JS POSTs to `/api/admin/upload-image`
@@ -40,11 +48,14 @@ Form fields:
 ### Image serving
 Private R2 bucket (`commontime-media`). Images served via `/api/admin/media/[...key]` which proxies from R2 with a 1-year cache header. Push notification image URLs must be HTTPS and publicly accessible without auth (the proxy handles this).
 
+### Action buttons
+Up to 2 buttons, each with a label and URL. Stored as `PushAction[]` in the payload and passed to the service worker. In `notificationclick`, the SW routes to the button's URL if one was tapped, otherwise falls back to the notification's main URL. iOS silently ignores action buttons — the notification still arrives and tapping the body still works.
+
 ### Sending
-`sendAdminPush` action in `src/actions/admin.ts` queries D1 for the appropriate user IDs and calls `sendPushToUsers` from `src/lib/webpush.ts`. The `image` field is optional throughout.
+`sendAdminPush` action in `src/actions/admin.ts` queries D1 for the appropriate user IDs and calls `sendPushToUsers` from `src/lib/webpush.ts`.
 
 ### Service worker
-`public/push-sw.js` includes `image: data.image` in `showNotification` when the payload contains an image URL.
+`public/push-sw.js` handles `image` and `actions` in `showNotification`, and routes `notificationclick` to the correct URL based on which button (if any) was tapped.
 
 ---
 
@@ -52,12 +63,12 @@ Private R2 bucket (`commontime-media`). Images served via `/api/admin/media/[...
 
 | File | Purpose |
 |---|---|
-| `src/pages/admin/push.astro` | Compose UI with poll dropdown |
+| `src/pages/admin/push.astro` | Compose UI — audience radios, poll dropdown, image upload, action buttons |
 | `src/pages/api/admin/upload-image.ts` | R2 upload endpoint |
 | `src/pages/api/admin/media/[...key].ts` | R2 proxy/serve endpoint |
-| `src/actions/admin.ts` | `sendAdminPush` Astro action |
-| `src/lib/webpush.ts` | `sendPushToUsers` — `image?` param added |
-| `public/push-sw.js` | `showNotification` — `image` field added |
+| `src/actions/admin.ts` | `sendAdminPush` Astro action — audience queries, action button assembly |
+| `src/lib/webpush.ts` | `sendPushToUsers` — `image?` and `actions?` params |
+| `public/push-sw.js` | `showNotification` with image + actions; `notificationclick` routing |
 | `src/components/AppHeader.astro` | Admin nav link (admin email only) |
 | `wrangler.jsonc` | `MEDIA` R2 binding (both envs) |
 | `src/env.d.ts` | `MEDIA: R2Bucket` added to Env |
@@ -72,7 +83,7 @@ Private R2 bucket (`commontime-media`). Images served via `/api/admin/media/[...
 **Can control:**
 - Title, body text, URL on click
 - Large image below text (Chrome/Android only; iOS silently ignores)
-- Action buttons (up to 2) — each opens a specific URL, e.g. "Vote now" deep-linking to a poll
+- Action buttons (up to 2) — each opens a specific URL, e.g. "Vote now" deep-linking to a poll; Android/Chrome only
 - Tag — replace/update an existing notification silently
 - Vibration (Android only)
 
@@ -95,8 +106,6 @@ Any change to `public/push-sw.js` orphans existing iOS subscriptions — iOS tie
 ---
 
 ## Future ideas
-- Action buttons on notifications (e.g. "Vote now" → direct poll link)
-- Notify only unvoted participants on a specific poll
 - Rate limiting (e.g. max 3 sends per day)
 - Send history / audit log
 - Schedule a push for a future time
