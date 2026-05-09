@@ -1,52 +1,69 @@
-# Admin Push Notifications — Spec
+# Admin Push Notifications
 
-## Goal
-
-Allow the poll organiser (or an admin) to send a custom push notification targeted at participants of a specific poll, or to all subscribers.
+## Status: Implemented — needs preview deploy testing
 
 ---
 
-## Open questions
+## Requirements
 
-- Who can send? Poll organiser only? Or a separate admin role?
-- Where does the UI live? Inside the poll page (for the organiser)? A dedicated admin area?
-- Should it target all poll participants, or only those who have responded?
-- Should it support images? (Chrome/Android yes; iOS uncertain)
-- Should there be a message history / log?
-- Rate limiting — prevent accidental spam?
+- Only `ernie.braganza@gmail.com` can send (hardcoded admin check)
+- Two audience modes: **All subscribers** or **Poll participants** (by poll token)
+- Compose: title (required), body (required), URL (optional), image (optional)
+- Image: upload file (stored in R2, served via proxy) **or** paste a URL
+- Image renders on Chrome/Android; iOS receives the notification but silently ignores the image
+- No rate limiting or audit log for MVP
 
 ---
 
-## What we know
+## How it works
 
-### Data already available
-- `push_subscriptions(user_id, endpoint, p256dh, auth)` — who is subscribed
-- `participants(poll_id, user_id, email)` — who is on a given poll
-- `polls(id, token, title, creator_id)` — poll ownership
+### UI
+`/admin/push` — server-side redirect to `/` for non-admin users.
 
-### Query to get push targets for a poll
-```sql
-SELECT ps.user_id
-FROM push_subscriptions ps
-JOIN participants p ON p.user_id = ps.user_id
-WHERE p.poll_id = (SELECT id FROM polls WHERE token = ?)
-```
+Form fields:
+- **Title** and **Message** — required
+- **Link URL** — optional, defaults to `/`
+- **Image** — file upload OR URL paste; upload is converted to URL via the upload endpoint before form submit
+- **Audience** — radio: All subscribers / Specific poll (reveals poll token field)
+
+### Image upload flow
+1. User selects a file → JS POSTs to `/api/admin/upload-image`
+2. Server validates type (JPEG/PNG/GIF/WebP), stores in R2 as `push/{timestamp}-{uuid}.ext`
+3. Returns `{ url: "https://commontime.app/api/admin/media/push/..." }`
+4. URL is written into the hidden `image` form field
+5. On form submit, the action receives the URL and passes it through to the push payload
+
+### Image serving
+Private R2 bucket. Images served via `/api/admin/media/[...key]` which proxies from R2 with a 1-year cache header. Push notifications reference these URLs — they must be HTTPS and publicly accessible without auth (which they are via the proxy).
 
 ### Sending
-`sendPushToUsers(userIds, title, body, url, env.DB, vapid)` in `src/lib/webpush.ts` already handles everything. A custom push just needs a title, body, and optional URL and image.
+`sendAdminPush` action in `src/actions/admin.ts` queries the appropriate user IDs and calls `sendPushToUsers` from `src/lib/webpush.ts`. The `image` field is optional throughout.
 
-### Image support
-Add `image` to the payload and reference it in push-sw.js `showNotification`:
-```js
-image: data.image  // full-width image below notification text
-```
-Chrome/Android renders it. iOS PWA likely silently ignores it (notification still arrives).
+### Service worker
+`public/push-sw.js` includes `image: data.image` in `showNotification` when the payload contains an image URL.
 
 ---
 
-## Rough implementation plan
+## Files
 
-1. **New action** in `src/actions/polls.ts` — `sendCustomPush` (organiser only)
-2. **UI** — a small "Send update" form on the poll page, visible only to the creator
-3. **Payload** — `{ title, body, url?, image? }`
-4. **Guard** — only the poll creator can trigger it; rate-limit (e.g. max 3 per poll per day?)
+| File | Purpose |
+|---|---|
+| `src/pages/admin/push.astro` | Compose UI |
+| `src/pages/api/admin/upload-image.ts` | R2 upload endpoint |
+| `src/pages/api/admin/media/[...key].ts` | R2 proxy/serve endpoint |
+| `src/actions/admin.ts` | `sendAdminPush` action |
+| `src/lib/webpush.ts` | `sendPushToUsers` — `image?` param added |
+| `public/push-sw.js` | `showNotification` — `image` field added |
+| `wrangler.jsonc` | `MEDIA` R2 binding (both envs) |
+| `src/env.d.ts` | `MEDIA: R2Bucket` added to Env |
+
+## R2 bucket
+`commontime-media` — created 2026-05-09, ENAM region.
+
+---
+
+## Future ideas
+- Send to specific poll participants (implemented)
+- Rate limiting (e.g. max 3 per day)
+- Send history / audit log
+- Schedule a push for a future time

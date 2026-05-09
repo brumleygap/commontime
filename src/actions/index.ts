@@ -1,6 +1,7 @@
 import { createPoll, lockPoll, unlockPoll, cancelPoll, uncancelPoll, inviteParticipants } from "./polls";
 import { submitVote } from "./votes";
 import { sendMagicLink } from "./auth";
+import { sendAdminPush } from "./admin";
 
 export const server = {
     createPoll,
@@ -11,4 +12,5 @@ export const server = {
     inviteParticipants,
     submitVote,
     sendMagicLink,
+    sendAdminPush,
 };

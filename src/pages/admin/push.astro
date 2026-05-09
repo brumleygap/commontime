@@ -1,0 +1,167 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { actions } from "astro:actions";
+
+const ADMIN_EMAIL = "ernie.braganza@gmail.com";
+
+if (!Astro.locals.user || Astro.locals.user.email !== ADMIN_EMAIL) {
+  return Astro.redirect("/");
+}
+
+const result = await Astro.getActionResult(actions.sendAdminPush);
+---
+
+<BaseLayout title="Send Push">
+  <div class="mx-auto max-w-xl px-6 py-12">
+    <p class="ct-eyebrow mb-1">Admin</p>
+    <h1 class="text-2xl font-bold mb-8" style="font-family:'Playfair Display',serif">Send Push Notification</h1>
+
+    {result?.data?.ok && (
+      <div class="result-banner success">
+        ✓ Sent to {result.data.sent} subscriber{result.data.sent === 1 ? "" : "s"}.
+      </div>
+    )}
+    {result?.error && (
+      <div class="result-banner error">
+        {result.error.message}
+      </div>
+    )}
+
+    <form method="POST" action={actions.sendAdminPush} id="push-form" class="space-y-6">
+
+      <div class="field-group">
+        <label for="title" class="field-label">Title <span class="req">*</span></label>
+        <input id="title" name="title" type="text" required class="field-input" placeholder="CommonTime update" />
+      </div>
+
+      <div class="field-group">
+        <label for="body" class="field-label">Message <span class="req">*</span></label>
+        <textarea id="body" name="body" required rows="3" class="field-input" placeholder="Your message here…"></textarea>
+      </div>
+
+      <div class="field-group">
+        <label for="url" class="field-label">Link URL <span class="optional">(optional — defaults to /)</span></label>
+        <input id="url" name="url" type="text" class="field-input" placeholder="https://commontime.app/poll/..." />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Image <span class="optional">(optional — shown on Android/Chrome)</span></label>
+        <div class="image-options">
+          <div>
+            <label class="sub-label">Upload a file</label>
+            <input id="image-file" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="file-input" />
+            <p id="upload-status" class="upload-status"></p>
+          </div>
+          <div class="or-divider">or</div>
+          <div>
+            <label for="image-url" class="sub-label">Paste a URL</label>
+            <input id="image-url" type="text" class="field-input" placeholder="https://..." />
+          </div>
+        </div>
+        <input type="hidden" name="image" id="image-hidden" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Audience <span class="req">*</span></label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="audience" value="all" checked /> All subscribers
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="audience" value="poll" id="audience-poll" /> Specific poll
+          </label>
+        </div>
+      </div>
+
+      <div class="field-group" id="poll-token-group" style="display:none">
+        <label for="poll_token" class="field-label">Poll token</label>
+        <input id="poll_token" name="poll_token" type="text" class="field-input" placeholder="e.g. QE2q57X5wQbs" />
+      </div>
+
+      <button type="submit" class="ct-btn" id="submit-btn">Send notification</button>
+    </form>
+  </div>
+</BaseLayout>
+
+<script is:inline>
+  // Show/hide poll token field
+  document.querySelectorAll('input[name="audience"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const group = document.getElementById('poll-token-group');
+      const token = document.getElementById('poll_token');
+      const isPoll = document.getElementById('audience-poll').checked;
+      group.style.display = isPoll ? '' : 'none';
+      token.required = isPoll;
+    });
+  });
+
+  // Image: upload or URL
+  const fileInput  = document.getElementById('image-file');
+  const urlInput   = document.getElementById('image-url');
+  const hiddenImg  = document.getElementById('image-hidden');
+  const status     = document.getElementById('upload-status');
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    status.textContent = 'Uploading…';
+    urlInput.value = '';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      const { url } = await res.json();
+      hiddenImg.value = url;
+      status.textContent = '✓ Uploaded';
+    } catch (e) {
+      status.textContent = 'Upload failed: ' + e.message;
+      fileInput.value = '';
+    }
+  });
+
+  urlInput.addEventListener('input', () => {
+    hiddenImg.value = urlInput.value.trim();
+    if (urlInput.value.trim()) {
+      fileInput.value = '';
+      status.textContent = '';
+    }
+  });
+</script>
+
+<style>
+  .ct-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--red);
+  }
+  .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.05em; color: var(--muted); }
+  .req { color: var(--red); }
+  .optional { font-size: 11px; opacity: 0.6; }
+  .field-input {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--staff);
+    border-radius: 4px;
+    font-family: inherit; font-size: 15px;
+    background: #fff; color: var(--ink);
+    box-sizing: border-box;
+  }
+  .field-input:focus { outline: none; border-color: var(--ink); }
+  textarea.field-input { resize: vertical; }
+  .image-options { display: flex; flex-direction: column; gap: 10px; }
+  .sub-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .or-divider { font-size: 12px; color: var(--muted); text-align: center; }
+  .file-input { font-size: 14px; }
+  .upload-status { font-size: 12px; color: var(--muted); margin-top: 4px; min-height: 16px; }
+  .radio-group { display: flex; gap: 20px; }
+  .radio-label { font-size: 14px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .result-banner {
+    padding: 10px 14px; border-radius: 4px;
+    font-size: 14px; margin-bottom: 20px;
+  }
+  .result-banner.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+  .result-banner.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+</style>

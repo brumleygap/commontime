@@ -38,6 +38,12 @@
       "database_id": "63783172-f60e-4f0a-802b-452fb83ccb9b"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "commontime-media"
+    }
+  ],
   "env": {
     "preview": {
       "name": "commontime-preview",
@@ -50,6 +56,12 @@
           "binding": "DB",
           "database_name": "commontime-db-preview",
           "database_id": "8b67ab75-2c6d-47b3-a5c9-23b28e7b850d"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "commontime-media"
         }
       ],
       "services": [
