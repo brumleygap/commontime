@@ -9,7 +9,7 @@ export const sendAdminPush = defineAction({
     accept: "form",
     input: z.object({
         title: z.string().min(1, "Title is required"),
-        body: z.string().min(1, "Message is required"),
+        message: z.string().min(1, "Message is required"),
         url: z.string().nullish().transform(v => v || "/"),
         image: z.string().nullish().transform(v => v || undefined),
         audience: z.enum(["all", "poll"]),
@@ -53,7 +53,7 @@ export const sendAdminPush = defineAction({
         await sendPushToUsers(
             userIds,
             input.title,
-            input.body,
+            input.message,
             input.url || "/",
             env.DB,
             vapid,
