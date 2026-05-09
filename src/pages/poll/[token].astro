@@ -554,16 +554,13 @@ function cellColor(av: number | undefined): string {
         {inviteResult?.data?.ok && inviteResult.data.editToken && (
           <div class="invite-link-banner">
             <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
-            <div class="invite-link-row">
-              <input
-                id="invite-link-out"
-                class="invite-link-input"
-                type="text"
-                readonly
-                value={`${Astro.url.origin}/poll/${token}?invite=${inviteResult.data.editToken}`}
-              />
-              <button type="button" class="invite-link-copy" data-copy-target="invite-link-out">Copy</button>
-            </div>
+            <input
+              class="invite-link-input"
+              type="text"
+              readonly
+              onclick="this.select()"
+              value={`${Astro.url.origin}/poll/${token}?invite=${inviteResult.data.editToken}`}
+            />
             {inviteResult.data.emailSent
               ? <p class="invite-link-note">An email was also sent to the address you provided.</p>
               : <p class="invite-link-note">No email was sent — share the link above directly.</p>
@@ -1629,12 +1626,6 @@ function cellColor(av: number | undefined): string {
     color: var(--green);
   }
 
-  .invite-link-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
   .invite-link-input {
     flex: 1;
     font-family: 'DM Mono', monospace;
@@ -1645,26 +1636,6 @@ function cellColor(av: number | undefined): string {
     padding: 7px 10px;
     min-width: 0;
     outline: none;
-  }
-
-  .invite-link-copy {
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    color: var(--green);
-    background: none;
-    border: 1px solid var(--green);
-    padding: 7px 14px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.12s, color 0.12s;
-    flex-shrink: 0;
-  }
-
-  .invite-link-copy:hover,
-  .invite-link-copy.copied {
-    background: var(--green);
-    color: var(--white);
   }
 
   .invite-link-note {
@@ -1798,21 +1769,6 @@ function cellColor(av: number | undefined): string {
     else if (vibe === 0) bullet.style.background = "var(--red)";
     else bullet.style.background = "var(--bullet)";
   }
-
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const input = document.getElementById(btn.dataset.copyTarget!) as HTMLInputElement | null;
-      if (!input) return;
-      navigator.clipboard.writeText(input.value).then(() => {
-        btn.textContent = "Copied!";
-        btn.classList.add("copied");
-        setTimeout(() => {
-          btn.textContent = "Copy";
-          btn.classList.remove("copied");
-        }, 2000);
-      });
-    });
-  });
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
     const voteData = Object.entries(state)
