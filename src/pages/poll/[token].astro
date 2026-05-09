@@ -548,19 +548,32 @@ function cellColor(av: number | undefined): string {
       <div class="invite-card">
         <div class="invite-card-head">
           <h2 class="invite-title">Invite someone</h2>
-          <p class="invite-sub">Send a sign-in link directly to their inbox.</p>
+          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it to their inbox.</p>
         </div>
 
-        {inviteResult?.data?.ok && (
-          <div class="success-banner">
-            <strong>Invite sent!</strong>
-            <span>They'll receive an email with a link to this poll.</span>
+        {inviteResult?.data?.ok && inviteResult.data.editToken && (
+          <div class="invite-link-banner">
+            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
+            <div class="invite-link-row">
+              <input
+                id="invite-link-out"
+                class="invite-link-input"
+                type="text"
+                readonly
+                value={`${Astro.url.origin}/poll/${token}?invite=${inviteResult.data.editToken}`}
+              />
+              <button type="button" class="invite-link-copy" data-copy-target="invite-link-out">Copy</button>
+            </div>
+            {inviteResult.data.emailSent
+              ? <p class="invite-link-note">An email was also sent to the address you provided.</p>
+              : <p class="invite-link-note">No email was sent — share the link above directly.</p>
+            }
           </div>
         )}
 
         {inviteError && (
           <div class="error-banner-inline">
-            <strong>Couldn't send invite.</strong>
+            <strong>Couldn't create invite.</strong>
             {inviteError.message && <span>{inviteError.message}</span>}
           </div>
         )}
@@ -568,7 +581,7 @@ function cellColor(av: number | undefined): string {
         <form method="POST" action={actions.inviteParticipants} class="invite-form">
           <input type="hidden" name="token" value={token} />
           <div class="invite-field">
-            <label for="invite-name" class="field-label">Their name</label>
+            <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
             <input
               id="invite-name"
               name="name"
@@ -580,7 +593,7 @@ function cellColor(av: number | undefined): string {
             />
           </div>
           <div class="invite-field">
-            <label for="invite-email" class="field-label">Their email</label>
+            <label for="invite-email" class="field-label">Their email <span class="invite-optional">(optional — to also send by email)</span></label>
             <input
               id="invite-email"
               name="email"
@@ -588,11 +601,10 @@ function cellColor(av: number | undefined): string {
               autocomplete="off"
               placeholder="alice@example.com"
               class="invite-input"
-              required
             />
           </div>
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Send invite</button>
+            <button type="submit" class="invite-btn">♩ Get invite link</button>
           </div>
         </form>
       </div>
@@ -1590,6 +1602,78 @@ function cellColor(av: number | undefined): string {
     margin-top: 4px;
   }
 
+  .invite-optional {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .invite-link-banner {
+    padding: 14px 20px;
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .invite-link-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+
+  .invite-link-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .invite-link-input {
+    flex: 1;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--white);
+    border: 1px solid var(--green);
+    padding: 7px 10px;
+    min-width: 0;
+    outline: none;
+  }
+
+  .invite-link-copy {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--green);
+    background: none;
+    border: 1px solid var(--green);
+    padding: 7px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+    flex-shrink: 0;
+  }
+
+  .invite-link-copy:hover,
+  .invite-link-copy.copied {
+    background: var(--green);
+    color: var(--white);
+  }
+
+  .invite-link-note {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--green);
+  }
+
   .invite-submit-row {
     display: flex;
     justify-content: flex-end;
@@ -1714,6 +1798,21 @@ function cellColor(av: number | undefined): string {
     else if (vibe === 0) bullet.style.background = "var(--red)";
     else bullet.style.background = "var(--bullet)";
   }
+
+  document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById(btn.dataset.copyTarget!) as HTMLInputElement | null;
+      if (!input) return;
+      navigator.clipboard.writeText(input.value).then(() => {
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 2000);
+      });
+    });
+  });
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
     const voteData = Object.entries(state)
