@@ -10,10 +10,10 @@ export const sendAdminPush = defineAction({
     input: z.object({
         title: z.string().min(1, "Title is required"),
         body: z.string().min(1, "Message is required"),
-        url: z.string().default("/"),
-        image: z.string().optional(),
+        url: z.string().nullish().transform(v => v || "/"),
+        image: z.string().nullish().transform(v => v || undefined),
         audience: z.enum(["all", "poll"]),
-        poll_token: z.string().optional(),
+        poll_token: z.string().nullish().transform(v => v || undefined),
     }),
     handler: async (input, context) => {
         if (context.locals.user?.email !== ADMIN_EMAIL) {
