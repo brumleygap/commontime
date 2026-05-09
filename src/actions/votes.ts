@@ -2,6 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { env } from "cloudflare:workers";
 import { SubmitVoteSchema } from "./schemas/votes";
 import { sendPushToUsers } from "../lib/webpush";
+import { makeToken } from "../lib/tokens";
 
 export const submitVote = defineAction({
     accept: "form",
@@ -38,7 +39,7 @@ export const submitVote = defineAction({
                     await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
                     await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
                 } else {
-                    const editToken = crypto.randomUUID().replace(/-/g, "");
+                    const editToken = makeToken(8);
                     const row = await db
                         .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id) VALUES (?, ?, ?, ?) RETURNING id`)
                         .bind(pollId, name, editToken, userId)
@@ -95,7 +96,7 @@ export const submitVote = defineAction({
                     await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
                     await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
                 } else {
-                    const editToken = crypto.randomUUID().replace(/-/g, "");
+                    const editToken = makeToken(8);
                     const row = await db
                         .prepare(`INSERT INTO participants (poll_id, name, edit_token, email) VALUES (?, ?, ?, ?) RETURNING id`)
                         .bind(pollId, name, editToken, input.email)

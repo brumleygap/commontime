@@ -99,6 +99,7 @@ const myVoteMap = new Map<number, number>(); // optionId → availability
 // Invite token from ?invite= query param. Use let — may be nulled out if forwarded.
 let inviteToken = Astro.url.searchParams.get("invite") ?? null;
 let inviteEmail: string | null = null;
+let inviteName: string | null = null;
 
 if (currentUser) {
   const myParticipant = await db
@@ -118,9 +119,9 @@ if (currentUser) {
   }
 } else if (inviteToken) {
   const inviteParticipant = await db
-    .prepare(`SELECT id, email, claimed_at FROM participants WHERE edit_token = ? AND poll_id = ?`)
+    .prepare(`SELECT id, name, email, claimed_at FROM participants WHERE edit_token = ? AND poll_id = ?`)
     .bind(inviteToken, poll.id)
-    .first<{ id: number; email: string | null; claimed_at: string | null }>();
+    .first<{ id: number; name: string | null; email: string | null; claimed_at: string | null }>();
 
   if (inviteParticipant) {
     const cookieName = `ct_inv_${inviteToken}`;
@@ -141,10 +142,12 @@ if (currentUser) {
       });
       myParticipantId = inviteParticipant.id;
       inviteEmail = inviteParticipant.email;
+      inviteName = inviteParticipant.name;
     } else if (hasCookie) {
       // Returning invitee — same browser that claimed it
       myParticipantId = inviteParticipant.id;
       inviteEmail = inviteParticipant.email;
+      inviteName = inviteParticipant.name;
       const myVotes = (
         await db
           .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
@@ -410,7 +413,7 @@ function cellColor(av: number | undefined): string {
               name="name"
               type="text"
               autocomplete="name"
-              value={currentUser?.name ?? currentUser?.email ?? ""}
+              value={currentUser?.name ?? currentUser?.email ?? inviteName ?? ""}
               placeholder="e.g. Priya"
               class="name-input"
             />
@@ -548,27 +551,13 @@ function cellColor(av: number | undefined): string {
       <div class="invite-card">
         <div class="invite-card-head">
           <h2 class="invite-title">Invite someone</h2>
-          <p class="invite-sub">Send a sign-in link directly to their inbox.</p>
+          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
         </div>
 
-        {inviteResult?.data?.ok && (
-          <div class="success-banner">
-            <strong>Invite sent!</strong>
-            <span>They'll receive an email with a link to this poll.</span>
-          </div>
-        )}
-
-        {inviteError && (
-          <div class="error-banner-inline">
-            <strong>Couldn't send invite.</strong>
-            {inviteError.message && <span>{inviteError.message}</span>}
-          </div>
-        )}
-
-        <form method="POST" action={actions.inviteParticipants} class="invite-form">
+        <form method="POST" action={actions.inviteParticipants} class="invite-form" id="invite-form" data-poll-token={token}>
           <input type="hidden" name="token" value={token} />
           <div class="invite-field">
-            <label for="invite-name" class="field-label">Their name</label>
+            <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
             <input
               id="invite-name"
               name="name"
@@ -580,7 +569,7 @@ function cellColor(av: number | undefined): string {
             />
           </div>
           <div class="invite-field">
-            <label for="invite-email" class="field-label">Their email</label>
+            <label for="invite-email" class="field-label">Their email <span class="invite-optional">(optional — to also send by email)</span></label>
             <input
               id="invite-email"
               name="email"
@@ -588,11 +577,22 @@ function cellColor(av: number | undefined): string {
               autocomplete="off"
               placeholder="alice@example.com"
               class="invite-input"
-              required
             />
           </div>
+
+          <div id="invite-link-result" class="invite-link-result" style="display:none">
+            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
+            <a id="invite-link-value" class="invite-link-anchor" href="#" target="_blank" rel="noopener"></a>
+            <p id="invite-link-note" class="invite-link-note"></p>
+          </div>
+
+          <div id="invite-error-result" class="error-banner-inline" style="display:none">
+            <strong>Couldn't create invite.</strong>
+            <span id="invite-error-msg"></span>
+          </div>
+
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Send invite</button>
+            <button type="submit" class="invite-btn" id="invite-btn">♩ Get link</button>
           </div>
         </form>
       </div>
@@ -1590,6 +1590,49 @@ function cellColor(av: number | undefined): string {
     margin-top: 4px;
   }
 
+  .invite-optional {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+
+  .invite-link-result {
+    padding: 14px 20px;
+    background: var(--green-light);
+    border-bottom: 1px solid var(--staff);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .invite-link-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+
+  .invite-link-anchor {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--green);
+    word-break: break-all;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .invite-link-note {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--green);
+  }
+
   .invite-submit-row {
     display: flex;
     justify-content: flex-end;
@@ -1678,6 +1721,50 @@ function cellColor(av: number | undefined): string {
 </style>
 
 <script>
+  import { actions } from "astro:actions";
+
+  // ── Invite form — client-side submit to avoid page reload ────────────────
+  const inviteForm = document.getElementById("invite-form") as HTMLFormElement | null;
+  if (inviteForm) {
+    inviteForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const btn = document.getElementById("invite-btn") as HTMLButtonElement;
+      const resultDiv = document.getElementById("invite-link-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("invite-error-result") as HTMLDivElement;
+      const linkInput = document.getElementById("invite-link-value") as HTMLAnchorElement;
+      const linkNote = document.getElementById("invite-link-note") as HTMLElement;
+      const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
+
+      btn.disabled = true;
+      btn.textContent = "Getting link…";
+      errorDiv.style.display = "none";
+
+      const { data, error } = await actions.inviteParticipants(new FormData(inviteForm));
+
+      btn.disabled = false;
+      btn.textContent = "♩ Get link";
+
+      if (error) {
+        errorMsg.textContent = error.message ?? "Unknown error.";
+        errorDiv.style.display = "block";
+        resultDiv.style.display = "none";
+      } else if (data?.editToken) {
+        const pollToken = inviteForm.dataset.pollToken!;
+        const url = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
+        linkInput.href = url;
+        linkInput.textContent = url;
+        linkNote.textContent = data.emailSent
+          ? "An email was also sent to the address you provided."
+          : "No email was sent — share the link above directly.";
+        resultDiv.style.display = "flex";
+        // Clear fields ready for next invite
+        (inviteForm.querySelector("#invite-name") as HTMLInputElement).value = "";
+        (inviteForm.querySelector("#invite-email") as HTMLInputElement).value = "";
+      }
+    });
+  }
+
   // vote state: optionId (string) → availability (0|1|2|-1 = unset)
   const state: Record<string, number> = {};
 

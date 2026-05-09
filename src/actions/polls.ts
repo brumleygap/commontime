@@ -4,15 +4,7 @@ import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
 import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/webpush";
-
-function makeToken(length = 12) {
-    const alphabet =
-        "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    let out = "";
-    const bytes = crypto.getRandomValues(new Uint8Array(length));
-    for (const b of bytes) out += alphabet[b % alphabet.length];
-    return out;
-}
+import { makeToken } from "../lib/tokens";
 
 export const createPoll = defineAction({
     accept: "form",
@@ -223,7 +215,7 @@ export const inviteParticipants = defineAction({
     input: z.object({
         token: z.string(),
         name: z.string().min(1, "Please enter the invitee's name."),
-        email: z.email("Please enter a valid email address."),
+        email: z.string().optional(),
     }),
 
     async handler(input, context) {
@@ -244,62 +236,73 @@ export const inviteParticipants = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        const inviteeEmail = input.email.trim().toLowerCase();
         const inviteeName = input.name.trim();
+        const inviteeEmail = input.email?.trim().toLowerCase() || null;
 
-        // Find or create the invitee's user account
-        let invitee = await db
-            .prepare(`SELECT id, name FROM users WHERE email = ?`)
-            .bind(inviteeEmail)
-            .first<{ id: number; name: string | null }>();
+        if (inviteeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteeEmail)) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "Please enter a valid email address." });
+        }
 
-        if (!invitee) {
-            invitee = await db
-                .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id, name`)
-                .bind(inviteeEmail, inviteeName)
+        let editToken: string;
+
+        if (inviteeEmail) {
+            // Email provided: find or create user account, send email invite
+            let invitee = await db
+                .prepare(`SELECT id, name FROM users WHERE email = ?`)
+                .bind(inviteeEmail)
                 .first<{ id: number; name: string | null }>();
-        } else if (!invitee.name) {
+
+            if (!invitee) {
+                invitee = await db
+                    .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id, name`)
+                    .bind(inviteeEmail, inviteeName)
+                    .first<{ id: number; name: string | null }>();
+            } else if (!invitee.name) {
+                await db.prepare(`UPDATE users SET name = ? WHERE id = ?`).bind(inviteeName, invitee.id).run();
+            }
+
+            if (!invitee) {
+                throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create invitee account." });
+            }
+
+            const existing = await db
+                .prepare(`SELECT id, edit_token FROM participants WHERE poll_id = ? AND user_id = ?`)
+                .bind(poll.id, invitee.id)
+                .first<{ id: number; edit_token: string }>();
+
+            if (existing) {
+                editToken = existing.edit_token;
+            } else {
+                editToken = makeToken(8);
+                await db
+                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, inviteeName, editToken, invitee.id, inviteeEmail)
+                    .run();
+            }
+
+            const inviteToken = makeToken(32);
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
             await db
-                .prepare(`UPDATE users SET name = ? WHERE id = ?`)
-                .bind(inviteeName, invitee.id)
+                .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
+                .run();
+
+            const origin = new URL(context.request.url).origin;
+            const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+            const creatorName = context.locals.user?.name ?? userEmail;
+
+            console.log(`inviteParticipants: sending invite to ${inviteeEmail} for poll ${poll.id}`);
+            await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, poll.description, inviteUrl, creatorName, userEmail);
+        } else {
+            // Name only: create anonymous participant, no email sent
+            editToken = makeToken(8);
+            await db
+                .prepare(`INSERT INTO participants (poll_id, name, edit_token) VALUES (?, ?, ?)`)
+                .bind(poll.id, inviteeName, editToken)
                 .run();
         }
 
-        if (!invitee) {
-            throw new ActionError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create invitee account." });
-        }
-
-        // Ensure a participant row exists for this user+poll
-        const existingParticipant = await db
-            .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
-            .bind(poll.id, invitee.id)
-            .first<{ id: number }>();
-
-        if (!existingParticipant) {
-            const editToken = crypto.randomUUID().replace(/-/g, "");
-            await db
-                .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
-                .bind(poll.id, inviteeName, editToken, invitee.id, inviteeEmail)
-                .run();
-        }
-
-        // Create a 7-day invite token
-        const inviteToken = crypto.randomUUID().replace(/-/g, "");
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-        await db
-            .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
-            .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
-            .run();
-
-        const origin = new URL(context.request.url).origin;
-        const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
-        const creatorName = context.locals.user?.name ?? userEmail;
-
-        console.log(`inviteParticipants: sending invite to ${inviteeEmail} for poll ${poll.id}`);
-        await sendPollInviteEmail(env.EMAIL, inviteeEmail, inviteeName, poll.title, poll.description, inviteUrl, creatorName, userEmail);
-
-        return { ok: true, count: 1 };
+        return { ok: true, count: 1, editToken, emailSent: inviteeEmail !== null };
     },
 });
 
