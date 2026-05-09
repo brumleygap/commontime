@@ -582,7 +582,7 @@ function cellColor(av: number | undefined): string {
 
           <div id="invite-link-result" class="invite-link-result" style="display:none">
             <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
-            <input id="invite-link-value" class="invite-link-input" type="text" readonly onclick="this.select()" />
+            <a id="invite-link-value" class="invite-link-anchor" href="#" target="_blank" rel="noopener"></a>
             <p id="invite-link-note" class="invite-link-note"></p>
           </div>
 
@@ -1617,16 +1617,13 @@ function cellColor(av: number | undefined): string {
     color: var(--green);
   }
 
-  .invite-link-input {
-    flex: 1;
+  .invite-link-anchor {
     font-family: 'DM Mono', monospace;
     font-size: 13px;
-    color: var(--ink);
-    background: var(--white);
-    border: 1px solid var(--green);
-    padding: 7px 10px;
-    min-width: 0;
-    outline: none;
+    color: var(--green);
+    word-break: break-all;
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .invite-link-note {
@@ -1735,7 +1732,7 @@ function cellColor(av: number | undefined): string {
       const btn = document.getElementById("invite-btn") as HTMLButtonElement;
       const resultDiv = document.getElementById("invite-link-result") as HTMLDivElement;
       const errorDiv = document.getElementById("invite-error-result") as HTMLDivElement;
-      const linkInput = document.getElementById("invite-link-value") as HTMLInputElement;
+      const linkInput = document.getElementById("invite-link-value") as HTMLAnchorElement;
       const linkNote = document.getElementById("invite-link-note") as HTMLElement;
       const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
 
@@ -1754,12 +1751,13 @@ function cellColor(av: number | undefined): string {
         resultDiv.style.display = "none";
       } else if (data?.editToken) {
         const pollToken = inviteForm.dataset.pollToken!;
-        linkInput.value = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
+        const url = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
+        linkInput.href = url;
+        linkInput.textContent = url;
         linkNote.textContent = data.emailSent
           ? "An email was also sent to the address you provided."
           : "No email was sent — share the link above directly.";
         resultDiv.style.display = "flex";
-        linkInput.select();
         // Clear fields ready for next invite
         (inviteForm.querySelector("#invite-name") as HTMLInputElement).value = "";
         (inviteForm.querySelector("#invite-email") as HTMLInputElement).value = "";
