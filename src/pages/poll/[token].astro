@@ -99,6 +99,7 @@ const myVoteMap = new Map<number, number>(); // optionId → availability
 // Invite token from ?invite= query param. Use let — may be nulled out if forwarded.
 let inviteToken = Astro.url.searchParams.get("invite") ?? null;
 let inviteEmail: string | null = null;
+let inviteName: string | null = null;
 
 if (currentUser) {
   const myParticipant = await db
@@ -118,9 +119,9 @@ if (currentUser) {
   }
 } else if (inviteToken) {
   const inviteParticipant = await db
-    .prepare(`SELECT id, email, claimed_at FROM participants WHERE edit_token = ? AND poll_id = ?`)
+    .prepare(`SELECT id, name, email, claimed_at FROM participants WHERE edit_token = ? AND poll_id = ?`)
     .bind(inviteToken, poll.id)
-    .first<{ id: number; email: string | null; claimed_at: string | null }>();
+    .first<{ id: number; name: string | null; email: string | null; claimed_at: string | null }>();
 
   if (inviteParticipant) {
     const cookieName = `ct_inv_${inviteToken}`;
@@ -141,10 +142,12 @@ if (currentUser) {
       });
       myParticipantId = inviteParticipant.id;
       inviteEmail = inviteParticipant.email;
+      inviteName = inviteParticipant.name;
     } else if (hasCookie) {
       // Returning invitee — same browser that claimed it
       myParticipantId = inviteParticipant.id;
       inviteEmail = inviteParticipant.email;
+      inviteName = inviteParticipant.name;
       const myVotes = (
         await db
           .prepare(`SELECT option_id, availability FROM votes WHERE participant_id = ?`)
@@ -410,7 +413,7 @@ function cellColor(av: number | undefined): string {
               name="name"
               type="text"
               autocomplete="name"
-              value={currentUser?.name ?? currentUser?.email ?? ""}
+              value={currentUser?.name ?? currentUser?.email ?? inviteName ?? ""}
               placeholder="e.g. Priya"
               class="name-input"
             />
@@ -601,7 +604,7 @@ function cellColor(av: number | undefined): string {
             />
           </div>
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Get invite link</button>
+            <button type="submit" class="invite-btn">♩ Email link</button>
           </div>
         </form>
       </div>
