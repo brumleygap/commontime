@@ -32,7 +32,7 @@ export const sendAdminPush = defineAction({
             const rows = await env.DB
                 .prepare("SELECT DISTINCT user_id FROM push_subscriptions")
                 .all<{ user_id: number }>();
-            userIds = rows.results.map(r => r.user_id);
+            userIds = rows.results.map((r: { user_id: number }) => r.user_id);
         } else {
             if (!input.poll_token?.trim()) {
                 throw new ActionError({ code: "BAD_REQUEST", message: "Poll token is required." });
@@ -47,7 +47,7 @@ export const sendAdminPush = defineAction({
                 `)
                 .bind(input.poll_token.trim())
                 .all<{ user_id: number }>();
-            userIds = rows.results.map(r => r.user_id);
+            userIds = rows.results.map((r: { user_id: number }) => r.user_id);
         }
 
         await sendPushToUsers(
