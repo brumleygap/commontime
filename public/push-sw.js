@@ -8,7 +8,8 @@ self.addEventListener('push', event => {
 event.waitUntil(
     self.registration.showNotification(data.title ?? 'CommonTime', {
       body: data.body ?? '',
-      icon: '/commontime-logo.png',
+      icon: '/apple-touch-icon.png',
+      ...(data.image ? { image: data.image } : {}),
       data: { url: data.url ?? '/' },
     })
   );

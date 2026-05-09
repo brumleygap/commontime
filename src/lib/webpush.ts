@@ -156,6 +156,7 @@ export async function sendPushToUsers(
   url: string,
   db: D1Queryable,
   vapid: VapidKeys,
+  image?: string,
 ): Promise<void> {
   if (userIds.length === 0) return;
   const placeholders = userIds.map(() => "?").join(",");
@@ -165,8 +166,10 @@ export async function sendPushToUsers(
     .all<WebPushSubscription>();
   if (!rows.results.length) return;
 
+  const payload = image ? { title, body, url, image } : { title, body, url };
+
   const results = await Promise.allSettled(
-    rows.results.map(sub => sendOne(sub, { title, body, url }, vapid)),
+    rows.results.map(sub => sendOne(sub, payload, vapid)),
   );
 
   // Delete any subscriptions the push service reports as expired.

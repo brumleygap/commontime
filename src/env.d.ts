@@ -9,6 +9,7 @@ interface Env {
     DB: D1Database;
     EMAIL: Fetcher;
     ASSETS: Fetcher;
+    MEDIA: R2Bucket;
     VAPID_PUBLIC_KEY: string;
     VAPID_PRIVATE_KEY: string;
     VAPID_SUBJECT: string;
