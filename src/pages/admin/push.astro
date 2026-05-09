@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
+import { env } from "cloudflare:workers";
 
 const ADMIN_EMAIL = "ernie.braganza@gmail.com";
 
@@ -9,6 +10,19 @@ if (!Astro.locals.user || Astro.locals.user.email !== ADMIN_EMAIL) {
 }
 
 const result = await Astro.getActionResult(actions.sendAdminPush);
+
+// Polls that have at least one participant with a push subscription
+const pollRows = await env.DB.prepare(`
+  SELECT DISTINCT p.token, p.title, COUNT(DISTINCT ps.user_id) as sub_count
+  FROM polls p
+  JOIN participants pa ON pa.poll_id = p.id
+  JOIN push_subscriptions ps ON ps.user_id = pa.user_id
+  WHERE p.is_cancelled = 0
+  GROUP BY p.id
+  ORDER BY p.created_at DESC
+`).all<{ token: string; title: string; sub_count: number }>();
+
+const polls = pollRows.results;
 ---
 
 <BaseLayout title="Send Push">
@@ -74,8 +88,17 @@ const result = await Astro.getActionResult(actions.sendAdminPush);
       </div>
 
       <div class="field-group" id="poll-token-group" style="display:none">
-        <label for="poll_token" class="field-label">Poll token</label>
-        <input id="poll_token" name="poll_token" type="text" class="field-input" placeholder="e.g. QE2q57X5wQbs" />
+        <label for="poll_token" class="field-label">Poll</label>
+        {polls.length > 0 ? (
+          <select id="poll_token" name="poll_token" class="field-input">
+            <option value="">— choose a poll —</option>
+            {polls.map(p => (
+              <option value={p.token}>{p.title} ({p.sub_count} subscriber{p.sub_count === 1 ? "" : "s"})</option>
+            ))}
+          </select>
+        ) : (
+          <p class="no-polls">No polls with push subscribers found.</p>
+        )}
       </div>
 
       <button type="submit" class="ct-btn" id="submit-btn">Send notification</button>
@@ -164,4 +187,5 @@ const result = await Astro.getActionResult(actions.sendAdminPush);
   }
   .result-banner.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
   .result-banner.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .no-polls { font-size: 13px; color: var(--muted); margin: 0; }
 </style>
