@@ -11,18 +11,24 @@ if (!Astro.locals.user || Astro.locals.user.email !== ADMIN_EMAIL) {
 
 const result = await Astro.getActionResult(actions.sendAdminPush);
 
-// Polls that have at least one participant with a push subscription
-const pollRows = await env.DB.prepare(`
-  SELECT DISTINCT p.token, p.title, COUNT(DISTINCT ps.user_id) as sub_count
-  FROM polls p
-  JOIN participants pa ON pa.poll_id = p.id
-  JOIN push_subscriptions ps ON ps.user_id = pa.user_id
-  WHERE p.is_cancelled = 0
-  GROUP BY p.id
-  ORDER BY p.created_at DESC
-`).all<{ token: string; title: string; sub_count: number }>();
-
-const polls = pollRows.results;
+// Polls with subscriber counts
+let polls: { token: string; title: string; sub_count: number }[] = [];
+try {
+  const pollRows = await env.DB.prepare(`
+    SELECT p.token, p.title,
+      (SELECT COUNT(DISTINCT ps.user_id)
+       FROM participants pa
+       JOIN push_subscriptions ps ON ps.user_id = pa.user_id
+       WHERE pa.poll_id = p.id) AS sub_count
+    FROM polls p
+    WHERE p.cancelled_at IS NULL
+    ORDER BY p.created_at DESC
+    LIMIT 100
+  `).all<{ token: string; title: string; sub_count: number }>();
+  polls = pollRows.results;
+} catch (e) {
+  console.error("Admin push: failed to load polls", e);
+}
 ---
 
 <BaseLayout title="Send Push">
