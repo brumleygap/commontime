@@ -554,31 +554,7 @@ function cellColor(av: number | undefined): string {
           <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
         </div>
 
-        {inviteResult?.data?.ok && inviteResult.data.editToken && (
-          <div class="invite-link-banner">
-            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
-            <input
-              class="invite-link-input"
-              type="text"
-              readonly
-              onclick="this.select()"
-              value={`${Astro.url.origin}/poll/${token}?invite=${inviteResult.data.editToken}`}
-            />
-            {inviteResult.data.emailSent
-              ? <p class="invite-link-note">An email was also sent to the address you provided.</p>
-              : <p class="invite-link-note">No email was sent — share the link above directly.</p>
-            }
-          </div>
-        )}
-
-        {inviteError && (
-          <div class="error-banner-inline">
-            <strong>Couldn't create invite.</strong>
-            {inviteError.message && <span>{inviteError.message}</span>}
-          </div>
-        )}
-
-        <form method="POST" action={actions.inviteParticipants} class="invite-form">
+        <form method="POST" action={actions.inviteParticipants} class="invite-form" id="invite-form" data-poll-token={token}>
           <input type="hidden" name="token" value={token} />
           <div class="invite-field">
             <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
@@ -603,8 +579,20 @@ function cellColor(av: number | undefined): string {
               class="invite-input"
             />
           </div>
+
+          <div id="invite-link-result" class="invite-link-result" style="display:none">
+            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
+            <input id="invite-link-value" class="invite-link-input" type="text" readonly onclick="this.select()" />
+            <p id="invite-link-note" class="invite-link-note"></p>
+          </div>
+
+          <div id="invite-error-result" class="error-banner-inline" style="display:none">
+            <strong>Couldn't create invite.</strong>
+            <span id="invite-error-msg"></span>
+          </div>
+
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Get link</button>
+            <button type="submit" class="invite-btn" id="invite-btn">♩ Get link</button>
           </div>
         </form>
       </div>
@@ -1612,10 +1600,10 @@ function cellColor(av: number | undefined): string {
     margin-left: 4px;
   }
 
-  .invite-link-banner {
+  .invite-link-result {
     padding: 14px 20px;
     background: var(--green-light);
-    border-left: 3px solid var(--green);
+    border-bottom: 1px solid var(--staff);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1736,6 +1724,49 @@ function cellColor(av: number | undefined): string {
 </style>
 
 <script>
+  import { actions } from "astro:actions";
+
+  // ── Invite form — client-side submit to avoid page reload ────────────────
+  const inviteForm = document.getElementById("invite-form") as HTMLFormElement | null;
+  if (inviteForm) {
+    inviteForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const btn = document.getElementById("invite-btn") as HTMLButtonElement;
+      const resultDiv = document.getElementById("invite-link-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("invite-error-result") as HTMLDivElement;
+      const linkInput = document.getElementById("invite-link-value") as HTMLInputElement;
+      const linkNote = document.getElementById("invite-link-note") as HTMLElement;
+      const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
+
+      btn.disabled = true;
+      btn.textContent = "Getting link…";
+      errorDiv.style.display = "none";
+
+      const { data, error } = await actions.inviteParticipants(new FormData(inviteForm));
+
+      btn.disabled = false;
+      btn.textContent = "♩ Get link";
+
+      if (error) {
+        errorMsg.textContent = error.message ?? "Unknown error.";
+        errorDiv.style.display = "block";
+        resultDiv.style.display = "none";
+      } else if (data?.editToken) {
+        const pollToken = inviteForm.dataset.pollToken!;
+        linkInput.value = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
+        linkNote.textContent = data.emailSent
+          ? "An email was also sent to the address you provided."
+          : "No email was sent — share the link above directly.";
+        resultDiv.style.display = "flex";
+        linkInput.select();
+        // Clear fields ready for next invite
+        (inviteForm.querySelector("#invite-name") as HTMLInputElement).value = "";
+        (inviteForm.querySelector("#invite-email") as HTMLInputElement).value = "";
+      }
+    });
+  }
+
   // vote state: optionId (string) → availability (0|1|2|-1 = unset)
   const state: Record<string, number> = {};
 
