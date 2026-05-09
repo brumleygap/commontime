@@ -551,7 +551,7 @@ function cellColor(av: number | undefined): string {
       <div class="invite-card">
         <div class="invite-card-head">
           <h2 class="invite-title">Invite someone</h2>
-          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it to their inbox.</p>
+          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
         </div>
 
         {inviteResult?.data?.ok && inviteResult.data.editToken && (
@@ -604,7 +604,7 @@ function cellColor(av: number | undefined): string {
             />
           </div>
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn">♩ Email link</button>
+            <button type="submit" class="invite-btn">♩ Get link</button>
           </div>
         </form>
       </div>
