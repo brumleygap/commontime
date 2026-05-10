@@ -491,6 +491,7 @@ function cellColor(av: number | undefined): string {
         <p class="avail-empty">No responses yet. Be the first!</p>
       ) : (
         <div class="avail-table-wrap">
+          <button class="scroll-hint" aria-label="Scroll right">»</button>
           <table class="avail-table">
             <thead>
               <tr>
@@ -1055,29 +1056,35 @@ function cellColor(av: number | undefined): string {
     50%       { transform: translateX(5px); opacity: 0.5; }
   }
 
+  .scroll-hint {
+    display: none;
+  }
+
   @media (max-width: 767px) {
-    .avail-table-wrap::after {
-      content: '»';
+    .scroll-hint {
+      display: flex;
       position: absolute;
       top: 0;
       right: 0;
       bottom: 0;
       width: 56px;
       background: linear-gradient(to right, transparent, var(--cream) 60%);
-      display: flex;
       align-items: center;
       justify-content: flex-end;
       padding-right: 10px;
       font-size: 28px;
       font-weight: 700;
       color: var(--ink);
-      pointer-events: none;
+      border: none;
+      cursor: pointer;
       transition: opacity 0.25s;
       animation: scroll-hint 1.4s ease-in-out infinite;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .avail-table-wrap.scroll-end::after {
+    .avail-table-wrap.scroll-end .scroll-hint {
       opacity: 0;
+      pointer-events: none;
       animation: none;
     }
   }
@@ -1982,6 +1989,10 @@ function cellColor(av: number | undefined): string {
     };
     wrap.addEventListener("scroll", check, { passive: true });
     check();
+
+    wrap.querySelector(".scroll-hint")?.addEventListener("click", () => {
+      wrap.scrollBy({ left: wrap.clientWidth * 0.75, behavior: "smooth" });
+    });
   });
 
   // ── Auto-dismiss banners ─────────────────────────────────────────────────
