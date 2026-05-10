@@ -160,25 +160,25 @@ export const lockPoll = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        const placeholders = input.optionIds.map(() => "?").join(", ");
+        const uniqueOptionIds = [...new Set(input.optionIds)];
+        const placeholders = uniqueOptionIds.map(() => "?").join(", ");
         const options: { id: number; option_datetime: string }[] = (await db
             .prepare(`SELECT id, option_datetime FROM poll_options WHERE id IN (${placeholders}) AND poll_id = ? ORDER BY option_datetime ASC`)
-            .bind(...input.optionIds, poll.id)
+            .bind(...uniqueOptionIds, poll.id)
             .all<{ id: number; option_datetime: string }>()
         ).results;
 
-        if (options.length !== input.optionIds.length) {
+        if (options.length !== uniqueOptionIds.length) {
             throw new ActionError({ code: "BAD_REQUEST", message: "One or more invalid options." });
         }
 
-        await db.prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
-            .bind(options[0].id, poll.id)
-            .run();
-
-        await db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(poll.id).run();
-        await db.batch(options.map(o =>
-            db.prepare(`INSERT INTO chosen_poll_options (poll_id, option_id) VALUES (?, ?)`).bind(poll.id, o.id)
-        ));
+        await db.batch([
+            db.prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`).bind(options[0].id, poll.id),
+            db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(poll.id),
+            ...options.map(o =>
+                db.prepare(`INSERT INTO chosen_poll_options (poll_id, option_id) VALUES (?, ?)`).bind(poll.id, o.id)
+            ),
+        ]);
 
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
@@ -335,10 +335,10 @@ export const cancelPoll = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        await db
-            .prepare(`UPDATE polls SET cancelled_at = datetime('now'), chosen_option_id = NULL WHERE id = ?`)
-            .bind(poll.id)
-            .run();
+        await db.batch([
+            db.prepare(`UPDATE polls SET cancelled_at = datetime('now'), chosen_option_id = NULL WHERE id = ?`).bind(poll.id),
+            db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(poll.id),
+        ]);
 
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;

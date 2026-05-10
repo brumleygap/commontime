@@ -19,6 +19,7 @@ export async function sendFinalizationEmail(
 
     const isMulti = chosenDatetimes.length > 1;
     const displayDates = chosenDatetimes.map(fmt);
+    const displayDatesHtml = displayDates.map(he);
 
     const descText = pollDescription ? `\n\n${pollDescription}` : "";
     const descHtml = pollDescription
@@ -32,8 +33,8 @@ export async function sendFinalizationEmail(
         : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`;
 
     const datesHtml = isMulti
-        ? `<ul style="margin:0 0 16px;padding-left:20px">${displayDates.map(d => `<li style="margin-bottom:6px;font-size:16px;font-weight:bold">${d}</li>`).join("")}</ul>`
-        : `<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDates[0]}</p>`;
+        ? `<ul style="margin:0 0 16px;padding-left:20px">${displayDatesHtml.map(d => `<li style="margin-bottom:6px;font-size:16px;font-weight:bold">${d}</li>`).join("")}</ul>`
+        : `<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDatesHtml[0]}</p>`;
 
     const calLabel = isMulti ? "Add all to calendar →" : "Add to calendar →";
 

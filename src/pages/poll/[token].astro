@@ -501,7 +501,7 @@ function cellColor(av: number | undefined): string {
                 {optionStats.map((opt) => {
                   const { date, time } = fmtColDate(opt.option_datetime);
                   const isChosen = chosenOptionIds.has(opt.id);
-                  const isWinner = !isChosen && opt.score === maxScore && opt.score > 0;
+                  const isWinner = isOpen && !isChosen && opt.score === maxScore && opt.score > 0;
                   return (
                     <th
                       class={`avail-opt-hdr${isChosen ? " chosen" : isWinner ? " winner" : ""}`}
@@ -652,7 +652,7 @@ function cellColor(av: number | undefined): string {
                 {respondedIds.size === 0 && (
                   <p class="finalize-waiting">Waiting for responses before confirming.</p>
                 )}
-                <button type="submit" class="ct-btn" disabled={respondedIds.size === 0}>
+                <button type="submit" class="ct-btn" id="finalize-submit-btn" disabled={respondedIds.size === 0}>
                   ★ Confirm Dates
                 </button>
                 <p class="finalize-notify-note">This will notify all participants.</p>
@@ -1810,6 +1810,18 @@ function cellColor(av: number | undefined): string {
     else if (vibe === 2) bullet.style.background = "var(--maybe)";
     else if (vibe === 0) bullet.style.background = "var(--red)";
     else bullet.style.background = "var(--bullet)";
+  }
+
+  // ── Confirm Dates — disable submit when no checkbox is checked ──────────────
+  const finalizeSubmitBtn = document.getElementById("finalize-submit-btn") as HTMLButtonElement | null;
+  if (finalizeSubmitBtn) {
+    const checkboxes = document.querySelectorAll<HTMLInputElement>("input[name='optionIds']");
+    const syncBtn = () => {
+      const anyChecked = Array.from(checkboxes).some(c => c.checked);
+      finalizeSubmitBtn.disabled = !anyChecked;
+    };
+    checkboxes.forEach(c => c.addEventListener("change", syncBtn));
+    syncBtn();
   }
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
