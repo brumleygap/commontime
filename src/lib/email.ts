@@ -7,20 +7,36 @@ export async function sendFinalizationEmail(
     to: string,
     pollTitle: string,
     pollDescription: string | null,
-    chosenDatetime: string,
+    chosenDatetimes: string[],
     pollUrl: string,
     calendarUrl: string,
 ) {
-    const d = new Date(chosenDatetime);
-    const displayDate =
-        d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) +
-        " · " +
-        d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    const fmt = (dt: string) => {
+        const d = new Date(dt);
+        return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) +
+            " · " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    };
+
+    const isMulti = chosenDatetimes.length > 1;
+    const displayDates = chosenDatetimes.map(fmt);
+    const displayDatesHtml = displayDates.map(he);
 
     const descText = pollDescription ? `\n\n${pollDescription}` : "";
     const descHtml = pollDescription
         ? `<p style="font-style:italic;color:#555;margin:0 0 16px">${he(pollDescription)}</p>`
         : "";
+
+    const subject = isMulti ? `Dates confirmed: ${pollTitle}` : `It's happening: ${pollTitle}`;
+
+    const textBody = isMulti
+        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd all to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}`
+        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`;
+
+    const datesHtml = isMulti
+        ? `<ul style="margin:0 0 16px;padding-left:20px">${displayDatesHtml.map(d => `<li style="margin-bottom:6px;font-size:16px;font-weight:bold">${d}</li>`).join("")}</ul>`
+        : `<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDatesHtml[0]}</p>`;
+
+    const calLabel = isMulti ? "Add all to calendar →" : "Add to calendar →";
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
@@ -28,12 +44,11 @@ export async function sendFinalizationEmail(
         body: JSON.stringify({
             to,
             from: { email: "hello@commontime.app", name: "CommonTime" },
-            subject: `It's happening: ${pollTitle}`,
-            text: `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDate}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}\n\nSee you there!`,
-            html: `<p>Great news — a date has been confirmed.</p>
+            subject,
+            text: textBody,
+            html: `<p>${isMulti ? `Great news — ${chosenDatetimes.length} dates have been confirmed.` : "Great news — a date has been confirmed."}</p>
 <h2 style="font-family:Georgia,serif;margin:0 0 8px">${he(pollTitle)}</h2>
-${descHtml}<p style="font-size:18px;font-weight:bold;margin:0 0 16px">${displayDate}</p>
-<p style="margin:0 0 8px"><a href="${calendarUrl}" style="color:#c8102e;font-weight:bold">Add to calendar →</a></p>
+${descHtml}${datesHtml}<p style="margin:0 0 8px"><a href="${calendarUrl}" style="color:#c8102e;font-weight:bold">${calLabel}</a></p>
 <p style="margin:0 0 16px"><a href="${pollUrl}" style="color:#888;font-size:13px">View poll</a></p>
 <p style="color:#888;font-size:12px">CommonTime helps groups find a time that works for everyone.</p>`,
         }),

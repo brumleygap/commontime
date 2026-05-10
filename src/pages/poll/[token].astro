@@ -168,12 +168,20 @@ const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.c
 const isCancelled = poll.cancelled_at !== null;
 const isOpen = poll.chosen_option_id === null && !isCancelled;
 
-const chosenOption = poll.chosen_option_id
-  ? await db
-      .prepare(`SELECT id, option_datetime FROM poll_options WHERE id = ?`)
-      .bind(poll.chosen_option_id)
-      .first<{ id: number; option_datetime: string }>()
-  : null;
+const chosenOptions = poll.chosen_option_id
+  ? (await db
+      .prepare(`
+        SELECT po.id, po.option_datetime
+        FROM chosen_poll_options cpo
+        JOIN poll_options po ON po.id = cpo.option_id
+        WHERE cpo.poll_id = ?
+        ORDER BY po.option_datetime ASC
+      `)
+      .bind(poll.id)
+      .all<{ id: number; option_datetime: string }>()
+    ).results
+  : [];
+const chosenOptionIds = new Set(chosenOptions.map(o => o.id));
 
 // ── Build vote map for grid ───────────────────────────────────────────────────
 
@@ -321,10 +329,12 @@ function cellColor(av: number | undefined): string {
       <div class="finalized-banner">
         <div class="finalized-banner-icon" aria-hidden="true">★</div>
         <div style="flex:1">
-          <p class="finalized-eyebrow">Date confirmed</p>
-          <p class="finalized-date">{chosenOption ? fmtFull(chosenOption.option_datetime) : ""}</p>
+          <p class="finalized-eyebrow">{chosenOptions.length > 1 ? `${chosenOptions.length} dates confirmed` : "Date confirmed"}</p>
+          {chosenOptions.map((opt) => (
+            <p class="finalized-date">{fmtFull(opt.option_datetime)}</p>
+          ))}
           <p class="finalized-sub">This poll is closed. Thanks to everyone who responded.</p>
-          <a href={`/poll/${poll.token}/calendar.ics`} class="finalized-cal-link">Add to calendar →</a>
+          <a href={`/poll/${poll.token}/calendar.ics`} class="finalized-cal-link">{chosenOptions.length > 1 ? "Add all to calendar →" : "Add to calendar →"}</a>
 
           {isCreator && (
             <div class="reopen-section">
@@ -490,8 +500,8 @@ function cellColor(av: number | undefined): string {
                 <th class="avail-name-hdr">Who</th>
                 {optionStats.map((opt) => {
                   const { date, time } = fmtColDate(opt.option_datetime);
-                  const isChosen = opt.id === poll.chosen_option_id;
-                  const isWinner = !isChosen && opt.score === maxScore && opt.score > 0;
+                  const isChosen = chosenOptionIds.has(opt.id);
+                  const isWinner = isOpen && !isChosen && opt.score === maxScore && opt.score > 0;
                   return (
                     <th
                       class={`avail-opt-hdr${isChosen ? " chosen" : isWinner ? " winner" : ""}`}
@@ -602,8 +612,8 @@ function cellColor(av: number | undefined): string {
     {isCreator && isOpen && (
       <div class="finalize-card">
         <div class="finalize-card-head">
-          <h2 class="finalize-title">Confirm Date</h2>
-          <p class="finalize-sub">Choose a date to confirm and close this poll to new responses.</p>
+          <h2 class="finalize-title">Confirm Dates</h2>
+          <p class="finalize-sub">Choose one or more dates to confirm and close this poll.</p>
         </div>
 
         {lockError && (
@@ -617,11 +627,11 @@ function cellColor(av: number | undefined): string {
           <input type="hidden" name="token" value={token} />
 
           <div class="finalize-options">
-            {optionStats.map((opt, i) => {
+            {optionStats.map((opt) => {
               const isTop = opt.score === maxScore && opt.score > 0;
               return (
                 <label class={`finalize-option${isTop ? " top" : ""}`}>
-                  <input type="radio" name="optionId" value={opt.id} checked={i === 0} />
+                  <input type="checkbox" name="optionIds" value={opt.id} />
                   <span class="finalize-option-inner">
                     <span class="finalize-option-date">{fmtFull(opt.option_datetime)}</span>
                     <span class="finalize-option-votes">
@@ -642,8 +652,8 @@ function cellColor(av: number | undefined): string {
                 {respondedIds.size === 0 && (
                   <p class="finalize-waiting">Waiting for responses before confirming.</p>
                 )}
-                <button type="submit" class="ct-btn" disabled={respondedIds.size === 0}>
-                  ★ Confirm Date
+                <button type="submit" class="ct-btn" id="finalize-submit-btn" disabled={respondedIds.size === 0}>
+                  ★ Confirm Dates
                 </button>
                 <p class="finalize-notify-note">This will notify all participants.</p>
               </div>
@@ -1800,6 +1810,18 @@ function cellColor(av: number | undefined): string {
     else if (vibe === 2) bullet.style.background = "var(--maybe)";
     else if (vibe === 0) bullet.style.background = "var(--red)";
     else bullet.style.background = "var(--bullet)";
+  }
+
+  // ── Confirm Dates — disable submit when no checkbox is checked ──────────────
+  const finalizeSubmitBtn = document.getElementById("finalize-submit-btn") as HTMLButtonElement | null;
+  if (finalizeSubmitBtn) {
+    const checkboxes = document.querySelectorAll<HTMLInputElement>("input[name='optionIds']");
+    const syncBtn = () => {
+      const anyChecked = Array.from(checkboxes).some(c => c.checked);
+      finalizeSubmitBtn.disabled = !anyChecked;
+    };
+    checkboxes.forEach(c => c.addEventListener("change", syncBtn));
+    syncBtn();
   }
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
