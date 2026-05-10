@@ -1790,6 +1790,19 @@ function cellColor(av: number | undefined): string {
   .org-bar-btn--primary { color: var(--cream); font-weight: 700; }
   .org-bar-btn--danger  { color: rgba(200,16,46,0.75); }
 
+  /* Desktop: constrain the bar to the content width so it doesn't
+     span the full 1150px — feels more like a contained toolbar */
+  @media (min-width: 768px) {
+    .org-bar {
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(100%, 960px);
+      border-radius: 6px 6px 0 0;
+      border-left: 2px solid rgba(245,242,236,0.15);
+      border-right: 2px solid rgba(245,242,236,0.15);
+    }
+  }
+
   /* ── Organizer drawers ──────────────────────────────────────────────────── */
   .org-overlay {
     display: none;
@@ -1801,6 +1814,7 @@ function cellColor(av: number | undefined): string {
 
   .org-overlay.open { display: block; }
 
+  /* Mobile: bottom sheet */
   .org-drawer {
     position: fixed;
     bottom: 0;
@@ -1818,6 +1832,33 @@ function cellColor(av: number | undefined): string {
   }
 
   .org-drawer.open { transform: translateY(0); }
+
+  /* Desktop: centered modal */
+  @media (min-width: 768px) {
+    .org-drawer {
+      bottom: auto;
+      left: 50%;
+      top: 50%;
+      right: auto;
+      width: min(90vw, 560px);
+      max-height: 85vh;
+      border-radius: 6px;
+      border-top: none;
+      border: 2px solid var(--ink);
+      box-shadow: 6px 6px 0 var(--ink);
+      transform: translate(-50%, -48%) scale(0.97);
+      opacity: 0;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+      padding-bottom: 0;
+      pointer-events: none;
+    }
+
+    .org-drawer.open {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
 
   .org-drawer-header {
     display: flex;
