@@ -573,32 +573,44 @@ function cellColor(av: number | undefined): string {
     <!-- Invite drawer -->
     <div class="org-drawer" id="drawer-invite">
       <div class="org-drawer-header">
-        <span class="org-drawer-title">Invite someone</span>
+        <span class="org-drawer-title">Invite people</span>
         <button class="org-drawer-close" aria-label="Close">×</button>
       </div>
       <div class="org-drawer-body">
-        <p class="org-drawer-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
-        <form method="POST" action={actions.inviteParticipants} class="invite-form" id="invite-form" data-poll-token={token}>
-          <input type="hidden" name="token" value={token} />
+        <p class="org-drawer-sub">One entry per line. Include a name or just the email address.</p>
+        <form id="bulk-invite-form" data-poll-token={token}>
           <div class="invite-field">
-            <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
-            <input id="invite-name" name="name" type="text" autocomplete="off" placeholder="e.g. Alice" class="invite-input" required />
+            <div class="invite-label-row">
+              <label for="bulk-emails" class="field-label">People to invite</label>
+              <div class="invite-info-wrap">
+                <button type="button" class="invite-info-btn" aria-label="Format help" id="invite-info-btn"><em>i</em></button>
+                <div class="invite-info-popup" id="invite-info-popup" hidden>
+                  <p class="invite-info-heading">Accepted formats</p>
+                  <ul class="invite-info-list">
+                    <li><code>Alice Smith &lt;alice@example.com&gt;</code></li>
+                    <li><code>alice@example.com</code></li>
+                  </ul>
+                  <p class="invite-info-note">One entry per line. Comma-separated emails also work. Names are optional — if omitted they're derived from the email address.</p>
+                </div>
+              </div>
+            </div>
+            <textarea
+              id="bulk-emails"
+              name="emails"
+              class="bulk-emails-input"
+              rows="6"
+              placeholder="Alice Smith <alice@example.com>&#10;Bob Jones <bob@org.com>&#10;carol@company.com"
+              autocomplete="off"
+              spellcheck="false"
+            ></textarea>
           </div>
-          <div class="invite-field">
-            <label for="invite-email" class="field-label">Their email <span class="invite-optional">(optional — to also send by email)</span></label>
-            <input id="invite-email" name="email" type="email" autocomplete="off" placeholder="alice@example.com" class="invite-input" />
-          </div>
-          <div id="invite-link-result" class="invite-link-result" style="display:none">
-            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
-            <a id="invite-link-value" class="invite-link-anchor" href="#" target="_blank" rel="noopener"></a>
-            <p id="invite-link-note" class="invite-link-note"></p>
-          </div>
-          <div id="invite-error-result" class="error-banner-inline" style="display:none">
-            <strong>Couldn't create invite.</strong>
-            <span id="invite-error-msg"></span>
+          <div id="bulk-invite-result" class="bulk-invite-result" style="display:none"></div>
+          <div id="bulk-invite-error" class="error-banner-inline" style="display:none">
+            <strong>Couldn't send invites.</strong>
+            <span id="bulk-invite-error-msg"></span>
           </div>
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn" id="invite-btn">· Get link</button>
+            <button type="submit" class="invite-btn" id="bulk-invite-btn">Send invites</button>
           </div>
         </form>
       </div>
@@ -1701,6 +1713,127 @@ function cellColor(av: number | undefined): string {
     border-color: var(--red);
   }
 
+  .invite-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .invite-label-row .field-label {
+    margin-bottom: 0;
+  }
+
+  .invite-info-wrap {
+    position: relative;
+  }
+
+  .invite-info-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: 'Libre Baskerville', serif;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .invite-info-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .invite-info-popup {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    z-index: 50;
+    width: 280px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 14px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+  }
+
+  .invite-info-heading {
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 10px;
+    color: var(--on-dark-dim);
+    margin-bottom: 8px;
+  }
+
+  .invite-info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .invite-info-list code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cream);
+    word-break: break-all;
+  }
+
+  .invite-info-note {
+    font-size: 11px;
+    color: var(--on-dark-dim);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
+  .bulk-emails-input {
+    width: 100%;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--ink);
+    background: var(--white);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--ink);
+    padding: 12px 14px;
+    outline: none;
+    resize: vertical;
+    line-height: 1.7;
+  }
+
+  .bulk-emails-input::placeholder {
+    color: var(--placeholder);
+    font-style: italic;
+  }
+
+  .bulk-emails-input:focus {
+    border-color: var(--ink);
+    border-left-color: var(--red);
+  }
+
+  .bulk-invite-result {
+    padding: 12px 14px;
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
+    color: var(--green);
+    margin-bottom: 12px;
+  }
+
   .welcomed-banner {
     padding: 14px 20px;
     background: var(--green-light);
@@ -2107,43 +2240,50 @@ function cellColor(av: number | undefined): string {
   });
 
   // ── Invite form — client-side submit to avoid page reload ────────────────
-  const inviteForm = document.getElementById("invite-form") as HTMLFormElement | null;
-  if (inviteForm) {
-    inviteForm.addEventListener("submit", async (e) => {
+  // ── Invite info popup ────────────────────────────────────────────────────
+  const infoBtn = document.getElementById("invite-info-btn");
+  const infoPopup = document.getElementById("invite-info-popup");
+  if (infoBtn && infoPopup) {
+    infoBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      infoPopup.hidden = !infoPopup.hidden;
+    });
+    document.addEventListener("click", () => { infoPopup.hidden = true; });
+  }
+
+  const bulkInviteForm = document.getElementById("bulk-invite-form") as HTMLFormElement | null;
+  if (bulkInviteForm) {
+    bulkInviteForm.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const btn = document.getElementById("invite-btn") as HTMLButtonElement;
-      const resultDiv = document.getElementById("invite-link-result") as HTMLDivElement;
-      const errorDiv = document.getElementById("invite-error-result") as HTMLDivElement;
-      const linkInput = document.getElementById("invite-link-value") as HTMLAnchorElement;
-      const linkNote = document.getElementById("invite-link-note") as HTMLElement;
-      const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
+      const btn = document.getElementById("bulk-invite-btn") as HTMLButtonElement;
+      const resultDiv = document.getElementById("bulk-invite-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("bulk-invite-error") as HTMLDivElement;
+      const errorMsg = document.getElementById("bulk-invite-error-msg") as HTMLElement;
 
       btn.disabled = true;
-      btn.textContent = "Getting link…";
+      btn.textContent = "Sending…";
+      resultDiv.style.display = "none";
       errorDiv.style.display = "none";
 
-      const { data, error } = await actions.inviteParticipants(new FormData(inviteForm));
+      const fd = new FormData();
+      fd.append("token", bulkInviteForm.dataset.pollToken!);
+      fd.append("emails", (document.getElementById("bulk-emails") as HTMLTextAreaElement).value);
+
+      const { data, error } = await actions.bulkInvite(fd);
 
       btn.disabled = false;
-      btn.textContent = "· Get link";
+      btn.textContent = "Send invites";
 
       if (error) {
         errorMsg.textContent = error.message ?? "Unknown error.";
         errorDiv.style.display = "block";
-        resultDiv.style.display = "none";
-      } else if (data?.editToken) {
-        const pollToken = inviteForm.dataset.pollToken!;
-        const url = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
-        linkInput.href = url;
-        linkInput.textContent = url;
-        linkNote.textContent = data.emailSent
-          ? "An email was also sent to the address you provided."
-          : "No email was sent — share the link above directly.";
-        resultDiv.style.display = "flex";
-        // Clear fields ready for next invite
-        (inviteForm.querySelector("#invite-name") as HTMLInputElement).value = "";
-        (inviteForm.querySelector("#invite-email") as HTMLInputElement).value = "";
+      } else if (data) {
+        const parts = [`Invites sent to ${data.sent} ${data.sent === 1 ? "person" : "people"}.`];
+        if (data.skipped > 0) parts.push(`${data.skipped} already invited or skipped.`);
+        resultDiv.textContent = parts.join(" ");
+        resultDiv.style.display = "block";
+        (document.getElementById("bulk-emails") as HTMLTextAreaElement).value = "";
       }
     });
   }
