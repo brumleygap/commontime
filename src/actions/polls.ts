@@ -734,10 +734,12 @@ export const remindNonResponders = defineAction({
             }
         }
 
-        await db
-            .prepare(`UPDATE polls SET last_reminded_at = datetime('now') WHERE id = ?`)
-            .bind(poll.id)
-            .run();
+        if (sent > 0) {
+            await db
+                .prepare(`UPDATE polls SET last_reminded_at = datetime('now') WHERE id = ?`)
+                .bind(poll.id)
+                .run();
+        }
 
         return { ok: true, sent };
     },

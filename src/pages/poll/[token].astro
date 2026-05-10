@@ -22,9 +22,6 @@ const cancelError = cancelResult?.error;
 const deleteResult = await Astro.getActionResult(actions.deletePoll);
 if (deleteResult?.data?.ok) return Astro.redirect("/");
 
-const remindResult = await Astro.getActionResult(actions.remindNonResponders);
-
-
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
 
@@ -706,17 +703,11 @@ function cellColor(av: number | undefined): string {
         <button class="org-drawer-close" aria-label="Close">×</button>
       </div>
       <div class="org-drawer-body">
-        {remindResult?.data?.ok && (
-          <div class="remind-success">
-            Reminders sent to {remindResult.data.sent} {remindResult.data.sent === 1 ? "person" : "people"}.
-          </div>
-        )}
-        {remindResult?.error && (
-          <div class="error-banner-inline">
-            <strong>Couldn't send reminders.</strong>
-            <span>{remindResult.error.message}</span>
-          </div>
-        )}
+        <div id="remind-result" class="remind-success" style="display:none"></div>
+        <div id="remind-error" class="error-banner-inline" style="display:none">
+          <strong>Couldn't send reminders.</strong>
+          <span id="remind-error-msg"></span>
+        </div>
         {nonResponderCount === 0 ? (
           <p class="org-drawer-sub">Everyone has responded — nothing to remind.</p>
         ) : (
@@ -730,12 +721,9 @@ function cellColor(av: number | undefined): string {
                 Reminders were sent recently. You can send again in {reminderCooldownHours} hour{reminderCooldownHours !== 1 ? "s" : ""}.
               </p>
             ) : (
-              <form method="POST" action={actions.remindNonResponders}>
-                <input type="hidden" name="token" value={token} />
-                <button type="submit" class="invite-btn">
-                  Send reminders
-                </button>
-              </form>
+              <button type="button" class="invite-btn" id="remind-send-btn" data-poll-token={token}>
+                Send reminders
+              </button>
             )}
           </>
         )}
@@ -2350,6 +2338,37 @@ function cellColor(av: number | undefined): string {
       infoPopup.hidden = !infoPopup.hidden;
     });
     document.addEventListener("click", () => { infoPopup.hidden = true; });
+  }
+
+  const remindSendBtn = document.getElementById("remind-send-btn") as HTMLButtonElement | null;
+  if (remindSendBtn) {
+    remindSendBtn.addEventListener("click", async () => {
+      const resultDiv = document.getElementById("remind-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("remind-error") as HTMLDivElement;
+      const errorMsg = document.getElementById("remind-error-msg") as HTMLElement;
+
+      remindSendBtn.disabled = true;
+      remindSendBtn.textContent = "Sending…";
+      resultDiv.style.display = "none";
+      errorDiv.style.display = "none";
+
+      const fd = new FormData();
+      fd.append("token", remindSendBtn.dataset.pollToken!);
+
+      const { data, error } = await actions.remindNonResponders(fd);
+
+      remindSendBtn.disabled = false;
+      remindSendBtn.textContent = "Send reminders";
+
+      if (error) {
+        errorMsg.textContent = error.message ?? "Unknown error.";
+        errorDiv.style.display = "block";
+      } else if (data) {
+        resultDiv.textContent = `Reminders sent to ${data.sent} ${data.sent === 1 ? "person" : "people"}.`;
+        resultDiv.style.display = "block";
+        remindSendBtn.style.display = "none";
+      }
+    });
   }
 
   const bulkInviteForm = document.getElementById("bulk-invite-form") as HTMLFormElement | null;
