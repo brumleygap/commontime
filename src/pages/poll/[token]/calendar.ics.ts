@@ -7,7 +7,7 @@ export const GET: APIRoute = async ({ params }) => {
 
     const rows = (await db
         .prepare(`
-            SELECT p.title, p.description, p.timezone, po.option_datetime, po.id
+            SELECT p.title, p.description, p.timezone, p.duration_minutes, po.option_datetime, po.id
             FROM polls p
             JOIN chosen_poll_options cpo ON cpo.poll_id = p.id
             JOIN poll_options po ON po.id = cpo.option_id
@@ -15,7 +15,7 @@ export const GET: APIRoute = async ({ params }) => {
             ORDER BY po.option_datetime ASC
         `)
         .bind(token)
-        .all<{ title: string; description: string | null; timezone: string; option_datetime: string; id: number }>()
+        .all<{ title: string; description: string | null; timezone: string; duration_minutes: number; option_datetime: string; id: number }>()
     ).results;
 
     if (rows.length === 0) {
@@ -30,7 +30,8 @@ export const GET: APIRoute = async ({ params }) => {
     const esc = (s: string) =>
         s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 
-    const { title, description, timezone } = rows[0];
+    const { title, description, timezone, duration_minutes } = rows[0];
+    const durationMs = (duration_minutes ?? 60) * 60 * 1000;
 
     const lines = [
         "BEGIN:VCALENDAR",
@@ -42,7 +43,7 @@ export const GET: APIRoute = async ({ params }) => {
 
     for (const row of rows) {
         const startMs = new Date(row.option_datetime).getTime();
-        const endIso = new Date(startMs + 60 * 60 * 1000).toISOString().slice(0, 16);
+        const endIso = new Date(startMs + durationMs).toISOString().slice(0, 16);
         lines.push(
             "BEGIN:VEVENT",
             `UID:${token}-${row.id}@commontime.app`,

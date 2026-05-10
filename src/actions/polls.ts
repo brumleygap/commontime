@@ -12,7 +12,7 @@ export const createPoll = defineAction({
 
     handler: async (input, context) => {
         try {
-            const { title, description, timezone, options } = input;
+            const { title, description, timezone, options, duration } = input;
 
             const db = env.DB;
             const token = makeToken();
@@ -21,11 +21,11 @@ export const createPoll = defineAction({
 
             const pollInsert = await db
                 .prepare(
-                    `INSERT INTO polls (token, title, description, timezone, creator_id)
-           VALUES (?, ?, ?, ?, ?)
+                    `INSERT INTO polls (token, title, description, timezone, creator_id, duration_minutes)
+           VALUES (?, ?, ?, ?, ?, ?)
            RETURNING id`
                 )
-                .bind(token, title, description ?? null, timezone, creatorId)
+                .bind(token, title, description ?? null, timezone, creatorId, duration)
                 .first<{ id: number }>();
 
             if (!pollInsert || !pollInsert.id) {
@@ -488,6 +488,38 @@ export const unlockPoll = defineAction({
 
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
         await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
+
+        return { ok: true };
+    },
+});
+
+export const deletePoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string().min(1) }),
+
+    handler: async (input, context) => {
+        const userId = context.locals.user?.id;
+        if (!userId) throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number }>();
+
+        if (!poll) throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+
+        const participantCount = await db
+            .prepare(`SELECT COUNT(*) AS n FROM participants WHERE poll_id = ?`)
+            .bind(poll.id)
+            .first<{ n: number }>();
+
+        if ((participantCount?.n ?? 0) > 0) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "Cannot delete a poll that already has participants." });
+        }
+
+        await db.prepare(`DELETE FROM polls WHERE id = ?`).bind(poll.id).run();
 
         return { ok: true };
     },
