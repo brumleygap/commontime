@@ -189,10 +189,56 @@ export async function sendReminderEmail(
     to: string,
     recipientName: string,
     pollTitle: string,
+    pollDescription: string | null,
+    optionDatetimes: string[],
+    durationMinutes: number,
     inviteUrl: string,
     organizerName: string,
     organizerEmail: string,
 ) {
+    const fmtOption = (dt: string) => {
+        const start = new Date(dt);
+        const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+        const fmtDate = start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+        const fmtT = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+        return `${fmtDate} · ${fmtT(start)} – ${fmtT(end)}`;
+    };
+
+    const formattedOptions = optionDatetimes.map(fmtOption);
+
+    const descText = pollDescription ? `\n\n${pollDescription}` : "";
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;margin:0 0 16px">${he(pollDescription)}</p>`
+        : "";
+
+    const optionsText = formattedOptions.map(d => `  • ${d}`).join("\n");
+    const optionsHtml = formattedOptions
+        .map(d => `<li style="margin-bottom:6px">${he(d)}</li>`)
+        .join("");
+
+    const textBody = [
+        `Hi ${recipientName},`,
+        ``,
+        `${organizerName} is waiting for your response on "${pollTitle}".${descText}`,
+        ``,
+        `We're looking at these times:`,
+        ``,
+        optionsText,
+        ``,
+        `Mark your availability:`,
+        inviteUrl,
+        ``,
+        `This link signs you in automatically.`,
+    ].join("\n");
+
+    const htmlBody = `<p>Hi <strong>${he(recipientName)}</strong>,</p>
+<p><strong>${he(organizerName)}</strong> is waiting for your response on this event:</p>
+<h2 style="font-family:Georgia,serif;margin:8px 0 8px">${he(pollTitle)}</h2>
+${descHtml}<p style="margin:0 0 8px;font-size:14px;color:#555">We're looking at these times:</p>
+<ul style="margin:0 0 16px;padding-left:20px;font-size:15px">${optionsHtml}</ul>
+<p style="margin:0 0 16px"><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">Mark your availability →</a></p>
+<p style="color:#888;font-size:12px">This link signs you in automatically. CommonTime helps groups find a time that works for everyone.</p>`;
+
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,12 +247,8 @@ export async function sendReminderEmail(
             from: { email: "hello@commontime.app", name: "CommonTime" },
             replyTo: organizerEmail,
             subject: `Reminder: ${pollTitle}`,
-            text: `Hi ${recipientName},\n\n${organizerName} is still waiting for your response on "${pollTitle}".\n\nMark your availability:\n${inviteUrl}\n\nThis link signs you in automatically.`,
-            html: `<p>Hi <strong>${he(recipientName)}</strong>,</p>
-<p><strong>${he(organizerName)}</strong> is still waiting for your response on this poll:</p>
-<h2 style="font-family:Georgia,serif;margin:8px 0 16px">${he(pollTitle)}</h2>
-<p><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">Mark your availability →</a></p>
-<p style="color:#888;font-size:12px">This link signs you in automatically. CommonTime helps groups find a time that works for everyone.</p>`,
+            text: textBody,
+            html: htmlBody,
         }),
     });
 

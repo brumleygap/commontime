@@ -646,13 +646,20 @@ export const remindNonResponders = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title, description, last_reminded_at FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description, duration_minutes, last_reminded_at FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string; description: string | null; last_reminded_at: string | null }>();
+            .first<{ id: number; title: string; description: string | null; duration_minutes: number; last_reminded_at: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
+
+        const pollOptions = (
+            await db
+                .prepare(`SELECT option_datetime FROM poll_options WHERE poll_id = ? ORDER BY option_datetime ASC`)
+                .bind(poll.id)
+                .all<{ option_datetime: string }>()
+        ).results.map(r => r.option_datetime);
 
         const isAdmin = userEmail === "ernie.braganza@gmail.com";
         if (!isAdmin && poll.last_reminded_at) {
@@ -727,7 +734,7 @@ export const remindNonResponders = defineAction({
                     inviteUrl = `${origin}/poll/${input.token}?invite=${recipient.edit_token}`;
                 }
 
-                await sendReminderEmail(env.EMAIL, recipient.email, recipient.name, poll.title, inviteUrl, creatorName, userEmail);
+                await sendReminderEmail(env.EMAIL, recipient.email, recipient.name, poll.title, poll.description, pollOptions, poll.duration_minutes, inviteUrl, creatorName, userEmail);
                 sent++;
             } catch (e) {
                 console.error(`remindNonResponders: failed for ${recipient.email}:`, e);
