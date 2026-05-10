@@ -553,11 +553,9 @@ function cellColor(av: number | undefined): string {
       )}
     </div>
 
-    <!-- ── Invite section (creator only, while open) ────────────────────── -->
   </div>
-</BaseLayout>
 
-<!-- ── Organizer bottom bar + drawers (creator only, while open) ─────────── -->
+  <!-- ── Organizer bottom bar + drawers (creator only, while open) ─────────── -->
 {isCreator && isOpen && (
   <>
     <!-- Overlay -->
@@ -683,6 +681,7 @@ function cellColor(av: number | undefined): string {
     </div>
   </>
 )}
+</BaseLayout>
 
 <style>
   /* ── Poll header ────────────────────────────────────────────────────── */
@@ -916,7 +915,7 @@ function cellColor(av: number | undefined): string {
 
   .day-header {
     padding: 8px 16px;
-    background: var(--day-bg);
+    background: var(--staff);
     border-bottom: 1px solid var(--staff);
     display: flex;
     align-items: baseline;
@@ -1057,7 +1056,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-name-hdr {
-    background: var(--day-bg);
+    background: var(--staff);
     color: var(--muted);
     font-family: 'DM Mono', monospace;
     font-size: 12px;
@@ -1073,7 +1072,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-opt-hdr {
-    background: var(--day-bg);
+    background: var(--staff);
     border-left: 1px solid var(--staff);
     border-bottom: 2px solid var(--ink);
     border-top: 3px solid transparent;
@@ -1442,7 +1441,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .finalize-option:hover {
-    background: var(--day-bg);
+    background: var(--staff);
   }
 
   .finalize-option.top {
