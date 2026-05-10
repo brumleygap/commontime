@@ -519,7 +519,10 @@ export const deletePoll = defineAction({
             throw new ActionError({ code: "BAD_REQUEST", message: "Cannot delete a poll that already has participants." });
         }
 
-        await db.prepare(`DELETE FROM polls WHERE id = ?`).bind(poll.id).run();
+        await db.batch([
+            db.prepare(`DELETE FROM poll_options WHERE poll_id = ?`).bind(poll.id),
+            db.prepare(`DELETE FROM polls WHERE id = ?`).bind(poll.id),
+        ]);
 
         return { ok: true };
     },
