@@ -19,7 +19,7 @@ function wrap(body: string): string {
   <!-- Wordmark header -->
   <tr>
     <td bgcolor="#0f0f0e" style="background:#0f0f0e;padding:20px 32px;">
-      <span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:bold;color:#f5f2ec;letter-spacing:-0.3px;">CommonTime</span>
+      <span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:bold;color:#f5f2ec;letter-spacing:-0.3px;">Common</span><span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:bold;color:#c8102e;letter-spacing:-0.3px;">Time</span>
     </td>
   </tr>
 
