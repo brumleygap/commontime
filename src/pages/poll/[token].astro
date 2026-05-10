@@ -495,8 +495,8 @@ function cellColor(av: number | undefined): string {
       {participants.length === 0 ? (
         <p class="avail-empty">No responses yet. Be the first!</p>
       ) : (
-        <div class="avail-table-wrap">
-          <button class="scroll-hint" aria-label="Scroll right">»</button>
+        <div class="avail-table-outer">
+          <div class="avail-table-wrap">
           <table class="avail-table">
             <thead>
               <tr>
@@ -548,6 +548,8 @@ function cellColor(av: number | undefined): string {
               })}
             </tbody>
           </table>
+          </div>
+          <button class="scroll-hint" aria-label="Scroll right">»</button>
         </div>
       )}
 
@@ -1121,12 +1123,15 @@ function cellColor(av: number | undefined): string {
     margin-top: 16px;
   }
 
+  .avail-table-outer {
+    position: relative;
+  }
+
   .avail-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     border: 1px solid var(--staff);
     border-top: none;
-    position: relative;
   }
 
   @keyframes scroll-hint {
@@ -1146,7 +1151,6 @@ function cellColor(av: number | undefined): string {
       right: 0;
       bottom: 0;
       width: 56px;
-      z-index: 2;
       background: linear-gradient(to right, transparent, var(--cream) 60%);
       align-items: center;
       justify-content: flex-end;
@@ -1159,9 +1163,10 @@ function cellColor(av: number | undefined): string {
       transition: opacity 0.25s;
       animation: scroll-hint 1.4s ease-in-out infinite;
       -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
 
-    .avail-table-wrap.scroll-end .scroll-hint {
+    .avail-table-outer.scroll-end .scroll-hint {
       opacity: 0;
       pointer-events: none;
       animation: none;
@@ -2212,17 +2217,21 @@ function cellColor(av: number | undefined): string {
   });
 
   // ── Availability grid scroll hint ───────────────────────────────────────
-  document.querySelectorAll<HTMLElement>(".avail-table-wrap").forEach((wrap) => {
+  document.querySelectorAll<HTMLElement>(".avail-table-outer").forEach((outer) => {
+    const wrap = outer.querySelector<HTMLElement>(".avail-table-wrap");
+    const btn  = outer.querySelector<HTMLElement>(".scroll-hint");
+    if (!wrap || !btn) return;
+
     const check = () => {
       const atEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 4;
-      wrap.classList.toggle("scroll-end", atEnd);
+      outer.classList.toggle("scroll-end", atEnd);
     };
     wrap.addEventListener("scroll", check, { passive: true });
     check();
 
-    wrap.querySelector(".scroll-hint")?.addEventListener("click", () => {
-      wrap.scrollBy({ left: wrap.clientWidth * 0.75, behavior: "smooth" });
-    });
+    const scrollRight = () => wrap.scrollBy({ left: wrap.clientWidth * 0.75, behavior: "smooth" });
+    btn.addEventListener("click", scrollRight);
+    btn.addEventListener("touchstart", (e) => { e.preventDefault(); scrollRight(); }, { passive: false });
   });
 
   // ── Auto-dismiss banners ─────────────────────────────────────────────────
