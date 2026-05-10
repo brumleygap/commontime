@@ -247,7 +247,7 @@ export async function sendRescheduleEmail(
 
     const textBody = `The organiser has moved "${pollTitle}" to new dates. Head over to vote on the new options.\n\n${newPollUrl}`;
 
-    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has moved:</p>
+    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organizer has added more choices:</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
 ${descHtml}<p style="margin:0 0 24px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">New dates are available — please vote again.</p>
 ${btn(newPollUrl, "Vote on new dates →")}`;
