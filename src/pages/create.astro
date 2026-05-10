@@ -44,7 +44,7 @@ if (fromToken) {
 
       {fromToken && (
         <div class="reschedule-notice">
-          ♩ Starting a new poll with the same title and description. Add your new date options below.
+          · Starting a new poll with the same title and description. Add your new date options below.
         </div>
       )}
 
@@ -85,14 +85,14 @@ if (fromToken) {
         <!-- Date/time divider -->
         <div class="section-divider">
           <div class="divider-line"></div>
-          <span class="divider-label">♩ Date &amp; time options</span>
+          <span class="divider-label">· Date &amp; time options</span>
           <div class="divider-line"></div>
         </div>
 
         <!-- Dynamic slot list -->
         <div id="slots-container">
           <div class="datetime-slot">
-            <span class="slot-icon" aria-hidden="true">♩</span>
+            <span class="slot-icon" aria-hidden="true">·</span>
             <input type="datetime-local" class="slot-input datetime-option" />
             <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
           </div>
@@ -384,7 +384,7 @@ if (fromToken) {
     const div = document.createElement("div");
     div.className = "datetime-slot";
     div.innerHTML = `
-      <span class="slot-icon" aria-hidden="true">♩</span>
+      <span class="slot-icon" aria-hidden="true">·</span>
       <input type="datetime-local" class="slot-input datetime-option" />
       <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
     `;
