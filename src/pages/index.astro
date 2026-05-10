@@ -63,12 +63,19 @@ const CHOSEN_DT_SQL = `
 
 let myPolls: EnrichedPoll[] = [];
 let guestPolls: EnrichedPoll[] = [];
+let hasPasskey = false;
 
 function daysSince(isoStr: string): number {
   return (Date.now() - new Date(isoStr).getTime()) / (1000 * 60 * 60 * 24);
 }
 
 if (user) {
+  const pkRow = await env.DB
+    .prepare("SELECT 1 FROM passkey_credentials WHERE user_id = ? LIMIT 1")
+    .bind(user.id)
+    .first();
+  hasPasskey = !!pkRow;
+
   const { results } = await env.DB
     .prepare(
       `SELECT
@@ -150,6 +157,30 @@ if (user) {
           <a href="/create" class="new-poll-btn">· Create a poll</a>
         </div>
       </div>
+
+      {user && !hasPasskey && (
+        <div
+          id="passkey-prompt"
+          class="passkey-prompt"
+          style="display:none;"
+          data-email={user.email}
+        >
+          <div class="passkey-prompt-body">
+            <div class="passkey-prompt-text">
+              <strong>Speed up your next sign-in</strong>
+              <span>Add a passkey to sign in with face or fingerprint — no email needed.</span>
+            </div>
+            <div class="passkey-prompt-actions">
+              <button id="passkey-setup-btn" type="button" class="ct-btn" style="white-space:nowrap;padding:10px 18px;">
+                Set up passkey
+              </button>
+              <button id="passkey-dismiss-btn" type="button" class="passkey-dismiss-link">
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {myPolls.filter(p => !p.is_cancelled).length === 0 && myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) < 7).length === 0 ? (
         <div class="empty-state">
@@ -702,6 +733,78 @@ if (user) {
     text-underline-offset: 2px;
   }
 
+  /* ── Passkey prompt ─────────────────────────────────────────────────── */
+  .passkey-prompt {
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: var(--cream);
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--ink);
+  }
+
+  .passkey-prompt-body {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .passkey-prompt-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .passkey-prompt-text strong {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .passkey-prompt-text span {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .passkey-prompt-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+
+  .passkey-dismiss-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color 0.15s;
+    white-space: nowrap;
+  }
+
+  .passkey-dismiss-link:hover {
+    color: var(--ink);
+  }
+
+  .passkey-prompt-success {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--green);
+  }
+
   /* ── Mobile layout ──────────────────────────────────────────────────── */
   @media (max-width: 480px) {
     .dash-header {
@@ -901,5 +1004,63 @@ if (user) {
         }
       });
     })();
+  </script>
+)}
+
+{user && !hasPasskey && (
+  <script>
+    import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
+
+    const prompt = document.getElementById("passkey-prompt") as HTMLElement | null;
+    if (prompt) {
+      const DISMISSED_KEY = "ct_passkey_dismissed";
+
+      if (!localStorage.getItem(DISMISSED_KEY) && browserSupportsWebAuthn()) {
+        prompt.style.display = "block";
+
+        document.getElementById("passkey-dismiss-btn")?.addEventListener("click", () => {
+          localStorage.setItem(DISMISSED_KEY, "1");
+          prompt.style.display = "none";
+        });
+
+        document.getElementById("passkey-setup-btn")?.addEventListener("click", async () => {
+          const setupBtn = document.getElementById("passkey-setup-btn") as HTMLButtonElement;
+          const email = (prompt as HTMLElement & { dataset: DOMStringMap }).dataset.email ?? "";
+          if (!email) return;
+
+          setupBtn.disabled = true;
+          setupBtn.textContent = "Waiting for biometric…";
+
+          try {
+            const optRes = await fetch(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
+            const optData = await optRes.json() as { options: any; userId: number; error?: string };
+            if (!optRes.ok) throw new Error(optData.error ?? "Failed to get registration options");
+
+            const attestation = await startRegistration({ optionsJSON: optData.options });
+
+            const verRes = await fetch("/auth/passkey-register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ response: attestation, userId: optData.userId }),
+            });
+            const verData = await verRes.json() as { ok: boolean; error?: string };
+            if (!verData.ok) throw new Error(verData.error ?? "Registration failed");
+
+            localStorage.setItem(DISMISSED_KEY, "1");
+            prompt.innerHTML = `<div class="passkey-prompt-success">Passkey saved — you can now sign in with face or fingerprint.</div>`;
+            setTimeout(() => { prompt.style.display = "none"; }, 4000);
+          } catch (err: any) {
+            if (err?.name !== "NotAllowedError") {
+              const errEl = document.createElement("p");
+              errEl.style.cssText = "font-family:'Libre Baskerville',serif;font-style:italic;font-size:14px;color:var(--red);margin-top:10px;";
+              errEl.textContent = err?.message ?? "Something went wrong.";
+              prompt.querySelector(".passkey-prompt-body")?.appendChild(errEl);
+            }
+            setupBtn.disabled = false;
+            setupBtn.textContent = "Set up passkey";
+          }
+        });
+      }
+    }
   </script>
 )}
