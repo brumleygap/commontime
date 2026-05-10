@@ -213,6 +213,29 @@ export const lockPoll = defineAction({
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
         await sendPushToUsers(pushUserIds, `It's happening: ${poll.title}`, "A date has been confirmed.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
+        // When a rescheduled poll is confirmed, delete the original cancelled predecessor.
+        // It has served its purpose and no longer needs to appear on anyone's dashboard.
+        try {
+            const predecessor = await db
+                .prepare(`SELECT id FROM polls WHERE rescheduled_poll_token = ? AND cancelled_at IS NOT NULL`)
+                .bind(input.token)
+                .first<{ id: number }>();
+
+            if (predecessor) {
+                await db.batch([
+                    db.prepare(`DELETE FROM votes WHERE participant_id IN (SELECT id FROM participants WHERE poll_id = ?)`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM invites WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM poll_dismissals WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM participants WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM poll_options WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM polls WHERE id = ?`).bind(predecessor.id),
+                ]);
+            }
+        } catch (e) {
+            console.error("Failed to delete predecessor poll after confirmation:", e);
+        }
+
         return { ok: true };
     },
 });
