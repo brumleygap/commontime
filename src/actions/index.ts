@@ -1,4 +1,4 @@
-import { createPoll, lockPoll, unlockPoll, cancelPoll, uncancelPoll, inviteParticipants } from "./polls";
+import { createPoll, lockPoll, unlockPoll, cancelPoll, uncancelPoll, inviteParticipants, deletePoll } from "./polls";
 import { submitVote } from "./votes";
 import { sendMagicLink } from "./auth";
 import { sendAdminPush } from "./admin";
@@ -10,6 +10,7 @@ export const server = {
     cancelPoll,
     uncancelPoll,
     inviteParticipants,
+    deletePoll,
     submitVote,
     sendMagicLink,
     sendAdminPush,

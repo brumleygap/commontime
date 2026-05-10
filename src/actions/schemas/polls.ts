@@ -10,6 +10,8 @@ export const CreatePollSchema = z.object({
 
     timezone: z.string().min(1, "Timezone is required."),
 
+    duration: z.coerce.number().int().min(15).max(480).default(60),
+
     fromToken: z.string().optional(),
 
     options: z.preprocess(

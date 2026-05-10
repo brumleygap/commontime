@@ -4,6 +4,23 @@ import { env } from "cloudflare:workers";
 
 const user = Astro.locals.user ?? null;
 
+// Lazy cleanup: permanently delete cancelled polls older than 14 days
+// and all their child records (explicit deletes — D1 doesn't enforce FK cascades by default)
+// Wrapped in try-catch so a cleanup failure never takes down the home page.
+try {
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM votes WHERE participant_id IN (SELECT pa.id FROM participants pa JOIN polls pl ON pl.id = pa.poll_id WHERE pl.cancelled_at IS NOT NULL AND datetime(pl.cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM chosen_poll_options WHERE poll_id IN (SELECT id FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM invites WHERE poll_id IN (SELECT id FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM poll_dismissals WHERE poll_id IN (SELECT id FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM participants WHERE poll_id IN (SELECT id FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM poll_options WHERE poll_id IN (SELECT id FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now'))`),
+    env.DB.prepare(`DELETE FROM polls WHERE cancelled_at IS NOT NULL AND datetime(cancelled_at, '+14 days') < datetime('now')`),
+  ]);
+} catch (e) {
+  console.error("Cancelled poll cleanup failed:", e);
+}
+
 type PollRow = {
   token: string;
   title: string;
@@ -180,7 +197,7 @@ if (user) {
                     }
                   </div>
                 </div>
-                {!isCancelled && <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>}
+                <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
               </div>
             );
           })}
