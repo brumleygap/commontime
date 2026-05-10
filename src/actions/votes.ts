@@ -110,9 +110,7 @@ export const submitVote = defineAction({
             const voteStmt = db.prepare(
                 `INSERT INTO votes (participant_id, option_id, availability) VALUES (?, ?, ?)`
             );
-            for (const v of input.voteData) {
-                await voteStmt.bind(participantId, v.optionId, v.availability).run();
-            }
+            await db.batch(input.voteData.map(v => voteStmt.bind(participantId, v.optionId, v.availability)));
 
             // Notify the poll creator that someone voted (skip if creator is voting on their own poll)
             if (poll.creator_id && poll.creator_id !== userId) {
