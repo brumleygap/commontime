@@ -336,6 +336,103 @@ export const inviteParticipants = defineAction({
     },
 });
 
+export const bulkInvite = defineAction({
+    accept: "form",
+    input: z.object({
+        token: z.string().min(1),
+        emails: z.string().min(1, "Please enter at least one email address."),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to send invites." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        // Parse emails — comma, semicolon, or newline separated
+        const emailList = input.emails
+            .split(/[\n,;]+/)
+            .map(e => e.trim().toLowerCase())
+            .filter(e => e.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+        if (emailList.length === 0) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "No valid email addresses found." });
+        }
+
+        const origin = new URL(context.request.url).origin;
+        const creatorName = context.locals.user?.name ?? userEmail;
+
+        let sent = 0;
+        let skipped = 0;
+
+        for (const email of emailList) {
+            try {
+                // Derive a display name from the email prefix
+                const name = email.split("@")[0]!
+                    .replace(/[._\-+]/g, " ")
+                    .replace(/\b\w/g, c => c.toUpperCase())
+                    .trim();
+
+                let invitee = await db
+                    .prepare(`SELECT id, name FROM users WHERE email = ?`)
+                    .bind(email)
+                    .first<{ id: number; name: string | null }>();
+
+                if (!invitee) {
+                    invitee = await db
+                        .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id, name`)
+                        .bind(email, name)
+                        .first<{ id: number; name: string | null }>();
+                }
+
+                if (!invitee) continue;
+
+                // Skip if already a participant in this poll
+                const existing = await db
+                    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
+                    .bind(poll.id, invitee.id)
+                    .first<{ id: number }>();
+
+                if (existing) { skipped++; continue; }
+
+                const editToken = makeToken(8);
+                await db
+                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, invitee.name ?? name, editToken, invitee.id, email)
+                    .run();
+
+                const inviteToken = makeToken(32);
+                const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                await db
+                    .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
+                    .run();
+
+                const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+                await sendPollInviteEmail(env.EMAIL, email, invitee.name ?? name, poll.title, poll.description, inviteUrl, creatorName, userEmail);
+                sent++;
+            } catch (e) {
+                console.error(`bulkInvite: failed for ${email}:`, e);
+                skipped++;
+            }
+        }
+
+        return { ok: true, sent, skipped };
+    },
+});
+
 export const cancelPoll = defineAction({
     accept: "form",
     input: z.object({ token: z.string() }),
