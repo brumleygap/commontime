@@ -107,7 +107,7 @@ export const createPoll = defineAction({
 
                     await Promise.allSettled(
                         recipients.map(r =>
-                            sendRescheduleEmail(env.EMAIL, r.email, title, newPollUrl, organizerEmail)
+                            sendRescheduleEmail(env.EMAIL, r.email, title, description ?? null, newPollUrl, organizerEmail)
                         )
                     );
 
@@ -466,9 +466,9 @@ export const cancelPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -498,7 +498,7 @@ export const cancelPoll = defineAction({
         console.log(`cancelPoll: sending cancellation emails to ${recipients.length} recipient(s)`);
         const sendResults = await Promise.allSettled(
             recipients.map((r) =>
-                sendCancellationEmail(env.EMAIL, r.email, poll.title, pollUrl, userEmail)
+                sendCancellationEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl, userEmail)
             )
         );
         sendResults.forEach((r, i) => {
@@ -527,9 +527,9 @@ export const uncancelPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -558,7 +558,7 @@ export const uncancelPoll = defineAction({
 
         console.log(`uncancelPoll: sending reopen emails to ${recipients.length} recipient(s)`);
         const reopenResults = await Promise.allSettled(
-            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl))
         );
         reopenResults.forEach((r, i) => {
             if (r.status === "rejected") {
@@ -586,9 +586,9 @@ export const unlockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -617,7 +617,7 @@ export const unlockPoll = defineAction({
 
         console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const reopenResults = await Promise.allSettled(
-            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl))
         );
         reopenResults.forEach((r, i) => {
             if (r.status === "rejected") {

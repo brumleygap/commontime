@@ -122,13 +122,18 @@ export async function sendReopenEmail(
     emailBinding: Fetcher,
     to: string,
     pollTitle: string,
+    pollDescription: string | null,
     pollUrl: string,
 ) {
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;margin:0 0 20px;font-family:Arial,Helvetica,sans-serif;">${he(pollDescription)}</p>`
+        : "";
+
     const textBody = `The organiser has re-opened voting for "${pollTitle}". Head back to the poll to update your availability.\n\n${pollUrl}`;
 
     const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has re-opened voting on:</p>
-<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 24px;color:#0f0f0e;">${he(pollTitle)}</h2>
-${btn(pollUrl, "Update your availability →")}`;
+<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
+${descHtml}${btn(pollUrl, "Update your availability →")}`;
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
         method: "POST",
@@ -194,14 +199,19 @@ export async function sendCancellationEmail(
     emailBinding: Fetcher,
     to: string,
     pollTitle: string,
+    pollDescription: string | null,
     pollUrl: string,
     organizerEmail: string,
 ) {
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;margin:0 0 20px;font-family:Arial,Helvetica,sans-serif;">${he(pollDescription)}</p>`
+        : "";
+
     const textBody = `The organiser has cancelled "${pollTitle}". If you have questions, reply to this email.\n\nView poll:\n${pollUrl}`;
 
     const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has cancelled:</p>
-<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 24px;color:#0f0f0e;">${he(pollTitle)}</h2>
-<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#999;">If you have questions, reply to this email.</p>
+<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
+${descHtml}<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#999;">If you have questions, reply to this email.</p>
 <p style="margin:8px 0 0;"><a href="${pollUrl}" style="color:#999;font-size:13px;font-family:Arial,Helvetica,sans-serif;text-decoration:none;">View poll →</a></p>`;
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
@@ -227,14 +237,19 @@ export async function sendRescheduleEmail(
     emailBinding: Fetcher,
     to: string,
     pollTitle: string,
+    pollDescription: string | null,
     newPollUrl: string,
     organizerEmail: string,
 ) {
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">${he(pollDescription)}</p>`
+        : "";
+
     const textBody = `The organiser has moved "${pollTitle}" to new dates. Head over to vote on the new options.\n\n${newPollUrl}`;
 
     const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has moved:</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
-<p style="margin:0 0 24px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">New dates are available — please vote again.</p>
+${descHtml}<p style="margin:0 0 24px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">New dates are available — please vote again.</p>
 ${btn(newPollUrl, "Vote on new dates →")}`;
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {
