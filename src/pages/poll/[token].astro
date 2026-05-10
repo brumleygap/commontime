@@ -245,20 +245,21 @@ for (const opt of options) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const fmtT = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
 function fmtTime(dt: string, durationMins: number) {
   const start = new Date(dt);
   const end = new Date(start.getTime() + durationMins * 60 * 1000);
-  const fmt = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${fmt(start)} – ${fmt(end)}`;
+  return { start: fmtT(start), end: fmtT(end), full: `${fmtT(start)} – ${fmtT(end)}` };
 }
 
 function fmtColDate(dt: string, durationMins: number) {
   const start = new Date(dt);
   const end = new Date(start.getTime() + durationMins * 60 * 1000);
-  const fmtT = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
   return {
     date: start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-    time: `${fmtT(start)} – ${fmtT(end)}`,
+    timeStart: fmtT(start),
+    timeFull: `${fmtT(start)} – ${fmtT(end)}`,
   };
 }
 
@@ -459,7 +460,11 @@ function cellColor(av: number | undefined): string {
                     data-init={existing ?? -1}
                   >
                     <div class="time-bullet" data-bullet></div>
-                    <div class="time-label">{fmtTime(opt.option_datetime, poll.duration_minutes ?? 60)}</div>
+                    {(() => { const t = fmtTime(opt.option_datetime, poll.duration_minutes ?? 60); return (
+                    <div class="time-label" data-full={t.full}>
+                      {t.start}<span class="time-end-suffix"> – {t.end}</span>
+                    </div>
+                    ); })()}
                     <div class="vibe-pill">
                       <button type="button" class="vibe-seg" data-vibe="1">Yes</button>
                       <button type="button" class="vibe-seg" data-vibe="2">If needed</button>
@@ -497,19 +502,22 @@ function cellColor(av: number | undefined): string {
               <tr>
                 <th class="avail-name-hdr">Who</th>
                 {optionStats.map((opt) => {
-                  const { date, time } = fmtColDate(opt.option_datetime, poll.duration_minutes ?? 60);
+                  const { date, timeStart, timeFull } = fmtColDate(opt.option_datetime, poll.duration_minutes ?? 60);
                   const isChosen = chosenOptionIds.has(opt.id);
                   const isWinner = isOpen && !isChosen && opt.score === maxScore && opt.score > 0;
                   return (
                     <th
                       class={`avail-opt-hdr${isChosen ? " chosen" : isWinner ? " winner" : ""}`}
                       title={[...opt.yesNames.map(n => `✓ ${n}`), ...opt.maybeNames.map(n => `~ ${n}`)].join("\n") || "No responses yet"}
+                      data-full={`${date} · ${timeFull}`}
                     >
                       <span class="avail-hdr-date">{date}</span>
-                      <span class="avail-hdr-time">{time}</span>
+                      <span class="avail-hdr-time" data-full={timeFull}>
+                        {timeStart}<span class="time-end-suffix"> – {timeFull.split(" – ")[1]}</span>
+                      </span>
                       <span class={`avail-hdr-count${isChosen ? " confirmed" : isWinner ? " hot" : ""}`}>
                         {opt.yesCount}/{respondedIds.size}
-                        {isChosen ? " ★" : isWinner ? " ★" : ""}
+                        {isChosen ? " ★" : ""}
                       </span>
                     </th>
                   );
@@ -682,6 +690,13 @@ function cellColor(av: number | undefined): string {
     </div>
   </>
 )}
+
+<!-- Time detail popup (mobile only) -->
+<div id="time-popup" class="time-popup" hidden>
+  <p id="time-popup-text" class="time-popup-text"></p>
+  <button id="time-popup-close" class="time-popup-close">Done</button>
+</div>
+<div id="time-popup-overlay" class="time-popup-overlay" hidden></div>
 </BaseLayout>
 
 <style>
@@ -963,6 +978,57 @@ function cellColor(av: number | undefined): string {
     color: var(--ink);
     flex: 1;
     min-width: 0;
+  }
+
+  /* ── Mobile time abbreviation + popup ──────────────────────────────────── */
+  @media (max-width: 767px) {
+    .time-end-suffix { display: none; }
+
+    .time-label[data-full] { cursor: pointer; text-decoration: underline dotted var(--staff); }
+    .avail-hdr-time[data-full] { cursor: pointer; }
+  }
+
+  .time-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(15,15,14,0.4);
+  }
+
+  .time-popup {
+    position: fixed;
+    bottom: 50%;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    z-index: 201;
+    background: var(--cream);
+    border: 2px solid var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    padding: 24px 28px;
+    width: min(90vw, 340px);
+    text-align: center;
+  }
+
+  .time-popup-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 16px;
+    line-height: 1.4;
+  }
+
+  .time-popup-close {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--cream);
+    border: none;
+    padding: 10px 28px;
+    cursor: pointer;
+    min-height: 44px;
   }
 
   .vibe-pill {
@@ -1980,6 +2046,36 @@ function cellColor(av: number | undefined): string {
   });
   overlay?.addEventListener("click", closeAllDrawers);
 
+
+  // ── Mobile time detail popup ────────────────────────────────────────────
+  const timePopup = document.getElementById("time-popup") as HTMLElement | null;
+  const timePopupOverlay = document.getElementById("time-popup-overlay") as HTMLElement | null;
+  const timePopupText = document.getElementById("time-popup-text") as HTMLElement | null;
+
+  function openTimePopup(text: string) {
+    if (!timePopup || !timePopupOverlay || !timePopupText) return;
+    timePopupText.textContent = text;
+    timePopup.hidden = false;
+    timePopupOverlay.hidden = false;
+  }
+
+  function closeTimePopup() {
+    if (timePopup) timePopup.hidden = true;
+    if (timePopupOverlay) timePopupOverlay.hidden = true;
+  }
+
+  document.getElementById("time-popup-close")?.addEventListener("click", closeTimePopup);
+  timePopupOverlay?.addEventListener("click", closeTimePopup);
+
+  // Vote form time labels
+  document.querySelectorAll<HTMLElement>(".time-label[data-full]").forEach((el) => {
+    el.addEventListener("click", () => openTimePopup(el.dataset.full!));
+  });
+
+  // Grid column headers
+  document.querySelectorAll<HTMLElement>(".avail-opt-hdr[data-full]").forEach((el) => {
+    el.addEventListener("click", () => openTimePopup(el.dataset.full!));
+  });
 
   // ── Availability grid scroll hint ───────────────────────────────────────
   document.querySelectorAll<HTMLElement>(".avail-table-wrap").forEach((wrap) => {
