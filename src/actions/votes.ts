@@ -26,6 +26,7 @@ export const submitVote = defineAction({
             const name = input.name?.trim() || context.locals.user?.email || null;
 
             let participantId: number;
+            let isExistingParticipant = false;
 
             if (userId) {
                 // Logged-in user: upsert by user_id
@@ -36,8 +37,8 @@ export const submitVote = defineAction({
 
                 if (existing) {
                     participantId = existing.id;
+                    isExistingParticipant = true;
                     await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
-                    await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
                 } else {
                     const editToken = makeToken(8);
                     const row = await db
@@ -73,8 +74,8 @@ export const submitVote = defineAction({
                 }
 
                 participantId = invited.id;
+                isExistingParticipant = true;
                 await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
-                await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
             } else {
                 // Anonymous visitor: email is required
                 if (!input.email) {
@@ -93,8 +94,8 @@ export const submitVote = defineAction({
 
                 if (existing) {
                     participantId = existing.id;
+                    isExistingParticipant = true;
                     await db.prepare(`UPDATE participants SET name = ? WHERE id = ?`).bind(name, participantId).run();
-                    await db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId).run();
                 } else {
                     const editToken = makeToken(8);
                     const row = await db
@@ -106,13 +107,17 @@ export const submitVote = defineAction({
                 }
             }
 
-            // Store ALL vote states (including busy=0), so we know who has responded.
+            // Delete existing votes and insert new ones atomically so a failed
+            // re-submit never leaves a participant with partial votes.
             const voteStmt = db.prepare(
                 `INSERT INTO votes (participant_id, option_id, availability) VALUES (?, ?, ?)`
             );
-            for (const v of input.voteData) {
-                await voteStmt.bind(participantId, v.optionId, v.availability).run();
-            }
+            await db.batch([
+                ...(isExistingParticipant
+                    ? [db.prepare(`DELETE FROM votes WHERE participant_id = ?`).bind(participantId)]
+                    : []),
+                ...input.voteData.map(v => voteStmt.bind(participantId, v.optionId, v.availability)),
+            ]);
 
             // Notify the poll creator that someone voted (skip if creator is voting on their own poll)
             if (poll.creator_id && poll.creator_id !== userId) {
