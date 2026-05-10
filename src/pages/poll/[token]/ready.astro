@@ -1,0 +1,413 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { actions } from "astro:actions";
+import { env } from "cloudflare:workers";
+
+const { token } = Astro.params;
+const db = env.DB;
+const currentUser = Astro.locals.user ?? null;
+
+const poll = await db
+  .prepare(`SELECT id, title, description, creator_id FROM polls WHERE token = ?`)
+  .bind(token)
+  .first<{ id: number; title: string; description: string | null; creator_id: number | null }>();
+
+if (!poll) return new Response("Poll not found", { status: 404 });
+
+const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.creator_id);
+if (!isCreator) return Astro.redirect(`/poll/${token}`);
+
+const pollUrl = `${new URL(Astro.request.url).origin}/poll/${token}`;
+---
+
+<BaseLayout title={`${poll.title} — Ready`}>
+  <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
+    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
+
+    <div class="relative z-10 mx-auto max-w-lg px-4 py-12">
+      <p class="ct-eyebrow mb-2">· Poll created</p>
+      <h1 class="ready-title">Your poll is <em>ready</em></h1>
+
+      <!-- Share link card -->
+      <div class="ready-card">
+        <p class="section-label">Share link</p>
+        <div class="share-row">
+          <input
+            id="share-url"
+            type="text"
+            class="share-input"
+            value={pollUrl}
+            readonly
+            aria-label="Poll URL"
+          />
+          <button id="copy-btn" type="button" class="copy-btn" aria-label="Copy link">
+            Copy
+          </button>
+        </div>
+        <p id="copy-confirm" class="copy-confirm" style="display:none;">Copied!</p>
+      </div>
+
+      <!-- Bulk invite card -->
+      <div class="ready-card" style="margin-top:16px;">
+        <div class="invite-label-row" style="margin-bottom:12px;">
+          <p class="section-label" style="margin:0;">Invite by email</p>
+          <div class="invite-info-wrap">
+            <button type="button" class="invite-info-btn" aria-label="Format help" id="invite-info-btn"><em>i</em></button>
+            <div class="invite-info-popup" id="invite-info-popup" hidden>
+              <p class="invite-info-heading">Accepted formats</p>
+              <ul class="invite-info-list">
+                <li><code>Alice Smith &lt;alice@example.com&gt;</code></li>
+                <li><code>alice@example.com</code></li>
+              </ul>
+              <p class="invite-info-note">One entry per line. Comma-separated emails also work.</p>
+            </div>
+          </div>
+        </div>
+        <textarea
+          id="bulk-emails"
+          class="bulk-emails-input"
+          rows="5"
+          placeholder="Alice Smith <alice@example.com>&#10;Bob Jones <bob@org.com>&#10;carol@company.com"
+          autocomplete="off"
+          spellcheck="false"
+        ></textarea>
+        <div id="invite-result" class="invite-result" style="display:none;"></div>
+        <div id="invite-error" class="error-banner-inline" style="display:none;">
+          <strong>Couldn't send invites.</strong>
+          <span id="invite-error-msg"></span>
+        </div>
+        <div class="invite-submit-row" style="margin-top:12px;">
+          <button type="button" class="invite-btn" id="invite-send-btn" data-poll-token={token}>
+            Send invites
+          </button>
+        </div>
+      </div>
+
+      <div class="ready-footer">
+        <a href={`/poll/${token}`} class="view-poll-link">View poll →</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  import { actions } from "astro:actions";
+
+  // ── Copy link ──────────────────────────────────────────────────────────────
+  const copyBtn = document.getElementById("copy-btn") as HTMLButtonElement | null;
+  const shareInput = document.getElementById("share-url") as HTMLInputElement | null;
+  const copyConfirm = document.getElementById("copy-confirm") as HTMLElement | null;
+
+  copyBtn?.addEventListener("click", async () => {
+    const url = shareInput?.value ?? "";
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      shareInput?.select();
+      document.execCommand("copy");
+    }
+    if (copyBtn) copyBtn.textContent = "Copied!";
+    if (copyConfirm) copyConfirm.style.display = "block";
+    setTimeout(() => {
+      if (copyBtn) copyBtn.textContent = "Copy";
+      if (copyConfirm) copyConfirm.style.display = "none";
+    }, 2000);
+  });
+
+  // ── Invite info popup ──────────────────────────────────────────────────────
+  const infoBtn = document.getElementById("invite-info-btn") as HTMLButtonElement | null;
+  const infoPopup = document.getElementById("invite-info-popup") as HTMLElement | null;
+  infoBtn?.addEventListener("click", () => {
+    if (infoPopup) infoPopup.hidden = !infoPopup.hidden;
+  });
+  document.addEventListener("click", (e) => {
+    if (infoPopup && infoBtn && !infoBtn.contains(e.target as Node)) {
+      infoPopup.hidden = true;
+    }
+  });
+
+  // ── Bulk invite ────────────────────────────────────────────────────────────
+  const inviteBtn = document.getElementById("invite-send-btn") as HTMLButtonElement | null;
+  if (inviteBtn) {
+    inviteBtn.addEventListener("click", async () => {
+      const emailsEl = document.getElementById("bulk-emails") as HTMLTextAreaElement;
+      const resultDiv = document.getElementById("invite-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("invite-error") as HTMLDivElement;
+      const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
+
+      inviteBtn.disabled = true;
+      inviteBtn.textContent = "Sending…";
+      resultDiv.style.display = "none";
+      errorDiv.style.display = "none";
+
+      const fd = new FormData();
+      fd.append("token", inviteBtn.dataset.pollToken!);
+      fd.append("emails", emailsEl.value);
+
+      const { data, error } = await actions.bulkInvite(fd);
+
+      inviteBtn.disabled = false;
+      inviteBtn.textContent = "Send invites";
+
+      if (error) {
+        errorMsg.textContent = error.message ?? "Unknown error.";
+        errorDiv.style.display = "block";
+      } else if (data) {
+        const parts = [`Invites sent to ${data.sent} ${data.sent === 1 ? "person" : "people"}.`];
+        if (data.skipped > 0) parts.push(`${data.skipped} already invited or skipped.`);
+        resultDiv.textContent = parts.join(" ");
+        resultDiv.style.display = "block";
+        emailsEl.value = "";
+      }
+    });
+  }
+</script>
+
+<style>
+  .ready-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(32px, 7vw, 48px);
+    font-weight: 900;
+    color: var(--ink);
+    line-height: 1.1;
+    margin-bottom: 28px;
+  }
+
+  .ready-title em {
+    color: var(--red);
+    font-style: italic;
+  }
+
+  .ready-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--ink);
+    padding: 24px;
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .share-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .share-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    border-bottom: 2px solid var(--staff);
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    padding: 6px 0 8px;
+    outline: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .copy-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: none;
+    border: 1px solid var(--ink);
+    padding: 6px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+    flex-shrink: 0;
+  }
+
+  .copy-btn:hover {
+    background: var(--ink);
+    color: var(--cream);
+  }
+
+  .copy-confirm {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--green);
+    margin-top: 6px;
+  }
+
+  .invite-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .invite-result {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--green);
+    margin-top: 10px;
+  }
+
+  .invite-submit-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .ready-footer {
+    margin-top: 24px;
+    text-align: center;
+  }
+
+  .view-poll-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+  }
+
+  .view-poll-link:hover {
+    color: var(--ink);
+  }
+
+  /* Reuse drawer styles for the invite form elements */
+  .bulk-emails-input {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--staff);
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    padding: 8px 0;
+    outline: none;
+    resize: vertical;
+    min-height: 100px;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+  }
+
+  .bulk-emails-input:focus {
+    border-color: var(--ink);
+  }
+
+  .bulk-emails-input::placeholder {
+    color: var(--placeholder);
+  }
+
+  .invite-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--cream);
+    background: var(--ink);
+    border: none;
+    padding: 12px 20px;
+    min-height: 44px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .invite-btn:hover { opacity: 0.85; }
+  .invite-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .error-banner-inline {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: var(--busy-bg);
+    border-left: 3px solid var(--red);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  .error-banner-inline strong { display: block; margin-bottom: 4px; }
+
+  /* Info popup (reuse from drawer) */
+  .invite-info-wrap {
+    position: relative;
+  }
+
+  .invite-info-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    background: none;
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .invite-info-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .invite-info-popup {
+    position: absolute;
+    right: 0;
+    top: 28px;
+    width: 280px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 14px 16px;
+    z-index: 30;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  }
+
+  .invite-info-heading {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+
+  .invite-info-list {
+    margin: 0 0 10px;
+    padding-left: 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--cream);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .invite-info-list code {
+    font-family: inherit;
+  }
+
+  .invite-info-note {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+</style>
