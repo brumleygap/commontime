@@ -94,9 +94,9 @@ export async function sendFinalizationEmail(
 
     const calLabel = isMulti ? "Add all to calendar →" : "Add to calendar →";
 
-    const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news —</p>
+    const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news — It's happening!</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
-${descHtml}<p style="margin:0 0 16px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">is happening${isMulti ? " on these dates" : ""}:</p>
+${descHtml}<p style="margin:0 0 16px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">${isMulti ? "Here are the dates and times:" : "Here's the date and time:"}</p>
 ${datesHtml}${btn(calendarUrl, calLabel)}
 <p style="margin:16px 0 0;"><a href="${pollUrl}" style="color:#999;font-size:13px;font-family:Arial,Helvetica,sans-serif;text-decoration:none;">View poll →</a></p>`;
 
