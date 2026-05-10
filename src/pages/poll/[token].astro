@@ -364,9 +364,12 @@ function cellColor(av: number | undefined): string {
         </div>
 
         {voteSuccess && (
-          <div class="success-banner">
-            <strong>Response saved!</strong>
-            <span>Scroll down to see the updated availability.</span>
+          <div class="success-banner auto-banner">
+            <div class="banner-body">
+              <strong>Response saved!</strong>
+              <span>Scroll down to see the updated availability.</span>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
@@ -378,17 +381,23 @@ function cellColor(av: number | undefined): string {
         )}
 
         {welcomed && currentUser && (
-          <div class="welcomed-banner">
-            <strong>Welcome to CommonTime!</strong>
-            <span>You've been invited to this poll. Mark your availability below.</span>
-            <a href="/login" class="welcomed-passkey-link">Add a passkey for easy sign-in next time →</a>
+          <div class="welcomed-banner auto-banner">
+            <div class="banner-body">
+              <strong>Welcome to CommonTime!</strong>
+              <span>You've been invited to this poll. Mark your availability below.</span>
+              <a href="/login" class="welcomed-passkey-link">Add a passkey for easy sign-in next time →</a>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
         {!welcomed && myParticipantId && (
-          <div class="welcome-banner">
-            <strong>Welcome back{currentUser?.name ? `, ${currentUser.name}` : currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
-            <span>Your previous selections are loaded. Update any time.</span>
+          <div class="welcome-banner auto-banner">
+            <div class="banner-body">
+              <strong>Welcome back{currentUser?.name ? `, ${currentUser.name}` : currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
+              <span>Your previous selections are loaded. Update any time.</span>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
@@ -431,22 +440,6 @@ function cellColor(av: number | undefined): string {
               placeholder="e.g. Priya"
               class="name-input"
             />
-          </div>
-
-          <!-- Vibe legend -->
-          <div class="vibe-legend">
-            <div class="vibe-legend-item" style="background:var(--yes-bg)">
-              <span style="color:var(--yes);font-weight:700;">✓</span>
-              <span class="vibe-legend-label" style="color:var(--yes)">Yes</span>
-            </div>
-            <div class="vibe-legend-item" style="background:var(--maybe-bg)">
-              <span style="color:var(--maybe);font-weight:700;">~</span>
-              <span class="vibe-legend-label" style="color:var(--maybe-text)">If needed</span>
-            </div>
-            <div class="vibe-legend-item" style="background:var(--busy-bg)">
-              <span style="color:var(--red);font-weight:700;">✕</span>
-              <span class="vibe-legend-label" style="color:var(--red)">No</span>
-            </div>
           </div>
 
           <!-- Day groups -->
@@ -792,12 +785,44 @@ function cellColor(av: number | undefined): string {
   }
 
   /* Banners */
+  .auto-banner {
+    transition: opacity 0.4s, max-height 0.4s;
+    overflow: hidden;
+  }
+  .auto-banner.dismissing {
+    opacity: 0;
+    max-height: 0 !important;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .banner-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .banner-close {
+    align-self: flex-start;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.5;
+    padding: 0 0 0 12px;
+  }
+  .banner-close:hover { opacity: 1; }
+
   .success-banner {
     padding: 14px 20px;
     background: var(--green-light);
     border-left: 3px solid var(--green);
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
     gap: 4px;
   }
 
@@ -831,7 +856,7 @@ function cellColor(av: number | undefined): string {
     background: var(--maybe-bg);
     border-left: 3px solid var(--maybe);
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
     gap: 4px;
   }
 
@@ -894,33 +919,6 @@ function cellColor(av: number | undefined): string {
 
   .name-input:focus {
     border-color: var(--red);
-  }
-
-  /* Vibe legend */
-  .vibe-legend {
-    display: flex;
-    border-bottom: 1px solid var(--staff);
-  }
-
-  .vibe-legend-item {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 0;
-    border-right: 1px solid var(--staff);
-    font-size: 16px;
-  }
-
-  .vibe-legend-item:last-child {
-    border-right: none;
-  }
-
-  .vibe-legend-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
   }
 
   /* Day groups */
@@ -1771,6 +1769,21 @@ function cellColor(av: number | undefined): string {
 
 <script>
   import { actions } from "astro:actions";
+
+  // ── Auto-dismiss banners ─────────────────────────────────────────────────
+  function dismissBanner(el: Element) {
+    (el as HTMLElement).style.maxHeight = el.getBoundingClientRect().height + "px";
+    requestAnimationFrame(() => (el as HTMLElement).classList.add("dismissing"));
+    el.addEventListener("transitionend", () => (el as HTMLElement).remove(), { once: true });
+  }
+
+  document.querySelectorAll(".auto-banner").forEach((banner) => {
+    const timer = setTimeout(() => dismissBanner(banner), 4000);
+    banner.querySelector(".banner-close")?.addEventListener("click", () => {
+      clearTimeout(timer);
+      dismissBanner(banner);
+    });
+  });
 
   // ── Invite form — client-side submit to avoid page reload ────────────────
   const inviteForm = document.getElementById("invite-form") as HTMLFormElement | null;
