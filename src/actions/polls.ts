@@ -140,7 +140,7 @@ export const lockPoll = defineAction({
     accept: "form",
     input: z.object({
         token: z.string(),
-        optionId: z.coerce.number().int(),
+        optionIds: z.array(z.coerce.number().int()).min(1, "Select at least one date."),
     }),
 
     async handler(input, context) {
@@ -160,19 +160,25 @@ export const lockPoll = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        const option = await db
-            .prepare(`SELECT id, option_datetime FROM poll_options WHERE id = ? AND poll_id = ?`)
-            .bind(input.optionId, poll.id)
-            .first<{ id: number; option_datetime: string }>();
+        const placeholders = input.optionIds.map(() => "?").join(", ");
+        const options = (await db
+            .prepare(`SELECT id, option_datetime FROM poll_options WHERE id IN (${placeholders}) AND poll_id = ? ORDER BY option_datetime ASC`)
+            .bind(...input.optionIds, poll.id)
+            .all<{ id: number; option_datetime: string }>()
+        ).results;
 
-        if (!option) {
-            throw new ActionError({ code: "BAD_REQUEST", message: "Invalid option." });
+        if (options.length !== input.optionIds.length) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "One or more invalid options." });
         }
 
-        await db
-            .prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
-            .bind(input.optionId, poll.id)
+        await db.prepare(`UPDATE polls SET chosen_option_id = ? WHERE id = ?`)
+            .bind(options[0].id, poll.id)
             .run();
+
+        await db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(poll.id).run();
+        await db.batch(options.map(o =>
+            db.prepare(`INSERT INTO chosen_poll_options (poll_id, option_id) VALUES (?, ?)`).bind(poll.id, o.id)
+        ));
 
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
@@ -191,10 +197,11 @@ export const lockPoll = defineAction({
                 .all<{ email: string; user_id: number | null }>()
         ).results;
 
+        const chosenDatetimes = options.map(o => o.option_datetime);
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const sendResults = await Promise.allSettled(
             recipients.map((r) =>
-                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, option.option_datetime, pollUrl, calendarUrl)
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, chosenDatetimes, pollUrl, calendarUrl)
             )
         );
         sendResults.forEach((r, i) => {
@@ -448,10 +455,10 @@ export const unlockPoll = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        await db
-            .prepare(`UPDATE polls SET chosen_option_id = NULL WHERE id = ?`)
-            .bind(poll.id)
-            .run();
+        await db.batch([
+            db.prepare(`UPDATE polls SET chosen_option_id = NULL WHERE id = ?`).bind(poll.id),
+            db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(poll.id),
+        ]);
 
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
