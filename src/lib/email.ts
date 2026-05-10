@@ -305,7 +305,7 @@ export async function sendReminderEmail(
 
     const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">Hi <strong>${he(recipientName)}</strong>,</p>
 <p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;"><strong>${he(organizerName)}</strong> is waiting for your response on:</p>
-<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
+<h3 style="font-family:Georgia,'Times New Roman',serif;font-size:17px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h3>
 ${descHtml}<p style="margin:0 0 8px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">We're looking at these times:</p>
 <ul style="margin:0 0 24px;padding-left:20px;font-size:15px;">${optionsHtml}</ul>
 ${btn(inviteUrl, "Mark your availability →")}
