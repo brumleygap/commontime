@@ -34,7 +34,7 @@ function wrap(body: string): string {
   <tr>
     <td bgcolor="#f5f2ec" style="background:#f5f2ec;padding:16px 32px;border:1px solid #d4cfc6;border-top:none;">
       <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#999;line-height:1.6;">
-        You received this because someone invited you to a CommonTime scheduling poll.<br>
+        You received this because you are invited to a CommonTime scheduling poll.<br>
         Questions? Reply to this email to reach the organizer directly.
       </p>
     </td>
@@ -131,7 +131,7 @@ export async function sendReopenEmail(
 
     const textBody = `The organiser has re-opened voting for "${pollTitle}". Head back to the poll to update your availability.\n\n${pollUrl}`;
 
-    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has re-opened voting on:</p>
+    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organizer has re-opened voting on:</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
 ${descHtml}${btn(pollUrl, "Update your availability →")}`;
 
@@ -209,7 +209,7 @@ export async function sendCancellationEmail(
 
     const textBody = `The organiser has cancelled "${pollTitle}". If you have questions, reply to this email.\n\nView poll:\n${pollUrl}`;
 
-    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organiser has cancelled:</p>
+    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organizer has cancelled:</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
 ${descHtml}<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#999;">If you have questions, reply to this email.</p>
 <p style="margin:8px 0 0;"><a href="${pollUrl}" style="color:#999;font-size:13px;font-family:Arial,Helvetica,sans-serif;text-decoration:none;">View poll →</a></p>`;
