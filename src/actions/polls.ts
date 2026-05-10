@@ -161,7 +161,7 @@ export const lockPoll = defineAction({
         }
 
         const placeholders = input.optionIds.map(() => "?").join(", ");
-        const options = (await db
+        const options: { id: number; option_datetime: string }[] = (await db
             .prepare(`SELECT id, option_datetime FROM poll_options WHERE id IN (${placeholders}) AND poll_id = ? ORDER BY option_datetime ASC`)
             .bind(...input.optionIds, poll.id)
             .all<{ id: number; option_datetime: string }>()
