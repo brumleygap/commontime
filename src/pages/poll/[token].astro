@@ -577,16 +577,16 @@ function cellColor(av: number | undefined): string {
         <button class="org-drawer-close" aria-label="Close">×</button>
       </div>
       <div class="org-drawer-body">
-        <p class="org-drawer-sub">Paste email addresses — one per line or comma-separated. Each person gets a personal invite link by email.</p>
+        <p class="org-drawer-sub">One entry per line. Include a name or just the email address.</p>
         <form id="bulk-invite-form" data-poll-token={token}>
           <div class="invite-field">
-            <label for="bulk-emails" class="field-label">Email addresses</label>
+            <label for="bulk-emails" class="field-label">People to invite</label>
             <textarea
               id="bulk-emails"
               name="emails"
               class="bulk-emails-input"
-              rows="5"
-              placeholder="alice@example.com&#10;bob@org.com&#10;carol@company.com"
+              rows="6"
+              placeholder="Alice Smith <alice@example.com>&#10;Bob Jones <bob@org.com>&#10;carol@company.com"
               autocomplete="off"
               spellcheck="false"
             ></textarea>

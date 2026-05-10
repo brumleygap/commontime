@@ -361,13 +361,37 @@ export const bulkInvite = defineAction({
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
         }
 
-        // Parse emails — comma, semicolon, or newline separated
-        const emailList = input.emails
-            .split(/[\n,;]+/)
-            .map(e => e.trim().toLowerCase())
-            .filter(e => e.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+        // Parse entries — newline separated; each line can be:
+        //   "Name <email>"  →  use provided name
+        //   "email"         →  derive name from email prefix
+        function deriveNameFromEmail(email: string): string {
+            return email.split("@")[0]!
+                .replace(/[._\-+]/g, " ")
+                .replace(/\b\w/g, c => c.toUpperCase())
+                .trim();
+        }
 
-        if (emailList.length === 0) {
+        type Entry = { email: string; name: string };
+        const entries: Entry[] = [];
+        for (const line of input.emails.split(/\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const nameEmail = trimmed.match(/^(.+?)\s*<([^>]+)>\s*$/);
+            if (nameEmail) {
+                const email = nameEmail[2]!.trim().toLowerCase();
+                if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                    entries.push({ email, name: nameEmail[1]!.trim() });
+            } else {
+                // May be comma-separated plain emails on one line
+                for (const part of trimmed.split(/[,;]+/)) {
+                    const email = part.trim().toLowerCase();
+                    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                        entries.push({ email, name: deriveNameFromEmail(email) });
+                }
+            }
+        }
+
+        if (entries.length === 0) {
             throw new ActionError({ code: "BAD_REQUEST", message: "No valid email addresses found." });
         }
 
@@ -377,13 +401,8 @@ export const bulkInvite = defineAction({
         let sent = 0;
         let skipped = 0;
 
-        for (const email of emailList) {
+        for (const { email, name } of entries) {
             try {
-                // Derive a display name from the email prefix
-                const name = email.split("@")[0]!
-                    .replace(/[._\-+]/g, " ")
-                    .replace(/\b\w/g, c => c.toUpperCase())
-                    .trim();
 
                 let invitee = await db
                     .prepare(`SELECT id, name FROM users WHERE email = ?`)
