@@ -136,7 +136,7 @@ if (user) {
 
       {myPolls.filter(p => !p.is_cancelled).length === 0 && myPolls.filter(p => p.is_cancelled && daysSince(p.cancelled_at!) < 7).length === 0 ? (
         <div class="empty-state">
-          <img src="/commontime-logo.png" alt="CommonTime" class="empty-logo" aria-hidden="true" />
+          <img src="/commontime-logo.svg" alt="CommonTime" class="empty-logo" aria-hidden="true" />
           <p class="empty-msg">No polls yet.</p>
           <a href="/create" class="ct-btn">· Create your first poll</a>
         </div>
