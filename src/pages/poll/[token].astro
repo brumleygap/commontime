@@ -307,7 +307,7 @@ function cellColor(av: number | undefined): string {
     </div>
   </div>
 
-  <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
+  <div class="mx-auto max-w-5xl px-4 py-8 space-y-10" style={isCreator && isOpen ? "padding-bottom:100px" : ""}>
 
 
     <!-- ── Cancelled banner / finalized banner / vote form ─────────────── -->
@@ -554,75 +554,65 @@ function cellColor(av: number | undefined): string {
     </div>
 
     <!-- ── Invite section (creator only, while open) ────────────────────── -->
-    {isCreator && isOpen && (
-      <div class="invite-card">
-        <div class="invite-card-head">
-          <h2 class="invite-title">Invite someone</h2>
-          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
-        </div>
+  </div>
+</BaseLayout>
 
+<!-- ── Organizer bottom bar + drawers (creator only, while open) ─────────── -->
+{isCreator && isOpen && (
+  <>
+    <!-- Overlay -->
+    <div class="org-overlay" id="org-overlay"></div>
+
+    <!-- Invite drawer -->
+    <div class="org-drawer" id="drawer-invite">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Invite someone</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        <p class="org-drawer-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
         <form method="POST" action={actions.inviteParticipants} class="invite-form" id="invite-form" data-poll-token={token}>
           <input type="hidden" name="token" value={token} />
           <div class="invite-field">
             <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
-            <input
-              id="invite-name"
-              name="name"
-              type="text"
-              autocomplete="off"
-              placeholder="e.g. Alice"
-              class="invite-input"
-              required
-            />
+            <input id="invite-name" name="name" type="text" autocomplete="off" placeholder="e.g. Alice" class="invite-input" required />
           </div>
           <div class="invite-field">
             <label for="invite-email" class="field-label">Their email <span class="invite-optional">(optional — to also send by email)</span></label>
-            <input
-              id="invite-email"
-              name="email"
-              type="email"
-              autocomplete="off"
-              placeholder="alice@example.com"
-              class="invite-input"
-            />
+            <input id="invite-email" name="email" type="email" autocomplete="off" placeholder="alice@example.com" class="invite-input" />
           </div>
-
           <div id="invite-link-result" class="invite-link-result" style="display:none">
             <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
             <a id="invite-link-value" class="invite-link-anchor" href="#" target="_blank" rel="noopener"></a>
             <p id="invite-link-note" class="invite-link-note"></p>
           </div>
-
           <div id="invite-error-result" class="error-banner-inline" style="display:none">
             <strong>Couldn't create invite.</strong>
             <span id="invite-error-msg"></span>
           </div>
-
           <div class="invite-submit-row">
             <button type="submit" class="invite-btn" id="invite-btn">· Get link</button>
           </div>
         </form>
       </div>
-    )}
+    </div>
 
-    <!-- ── Finalize section (creator only, while open) ───────────────────── -->
-    {isCreator && isOpen && (
-      <div class="finalize-card">
-        <div class="finalize-card-head">
-          <h2 class="finalize-title">Confirm Dates</h2>
-          <p class="finalize-sub">Choose one or more dates to confirm and close this poll.</p>
-        </div>
-
+    <!-- Confirm drawer -->
+    <div class="org-drawer" id="drawer-confirm">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Confirm Dates</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        <p class="org-drawer-sub">Choose one or more dates to confirm and close this poll.</p>
         {lockError && (
           <div class="error-banner-inline">
             <strong>Couldn't confirm date.</strong>
             {lockError.message && <span>{lockError.message}</span>}
           </div>
         )}
-
         <form method="POST" action={actions.lockPoll} class="finalize-form">
           <input type="hidden" name="token" value={token} />
-
           <div class="finalize-options">
             {optionStats.map((opt) => {
               const isTop = opt.score === maxScore && opt.score > 0;
@@ -641,7 +631,6 @@ function cellColor(av: number | undefined): string {
               );
             })}
           </div>
-
           <div class="finalize-submit-row">
             <div class="finalize-submit-actions">
               <a href={`/create?from=${token}`} class="try-new-dates-link">· Try New Dates</a>
@@ -658,43 +647,42 @@ function cellColor(av: number | undefined): string {
           </div>
         </form>
       </div>
-    )}
+    </div>
 
-    <!-- ── Cancel section (creator only, while open) ────────────────────── -->
-    {isCreator && isOpen && (
-      <div class="cancel-section">
-        {cancelError && (
-          <p class="cancel-error">{cancelError.message}</p>
-        )}
+    <!-- Cancel drawer -->
+    <div class="org-drawer" id="drawer-cancel">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Cancel poll</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        {cancelError && <p class="cancel-error">{cancelError.message}</p>}
         <p class="cancel-warning">Cancelling will notify all participants that the meeting is off. You can still try new dates after cancelling.</p>
         <form method="POST" action={actions.cancelPoll}>
           <input type="hidden" name="token" value={token} />
-          <button
-            type="submit"
-            class="cancel-btn"
-            onclick="return confirm('Cancel this poll and notify all participants?\n\nYou can still try new dates after cancelling.')"
-          >
+          <button type="submit" class="cancel-btn" onclick="return confirm('Cancel this poll and notify all participants?\n\nYou can still try new dates after cancelling.')">
             Cancel this poll
           </button>
         </form>
-
         {participants.length === 0 && (
           <form method="POST" action={actions.deletePoll} style="margin-top:12px;">
             <input type="hidden" name="token" value={token} />
-            <button
-              type="submit"
-              class="delete-btn"
-              onclick="return confirm('Permanently delete this poll? This cannot be undone.')"
-            >
+            <button type="submit" class="delete-btn" onclick="return confirm('Permanently delete this poll? This cannot be undone.')">
               Delete poll
             </button>
           </form>
         )}
       </div>
-    )}
+    </div>
 
-  </div>
-</BaseLayout>
+    <!-- Fixed bottom bar -->
+    <div class="org-bar">
+      <button class="org-bar-btn" data-drawer="invite">Invite</button>
+      <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">Confirm</button>
+      <button class="org-bar-btn org-bar-btn--danger" data-drawer="cancel">Cancel</button>
+    </div>
+  </>
+)}
 
 <style>
   /* ── Poll header ────────────────────────────────────────────────────── */
@@ -1765,10 +1753,154 @@ function cellColor(av: number | undefined): string {
       font-size: 18px;
     }
   }
+
+  /* ── Organizer bottom bar ───────────────────────────────────────────────── */
+  .org-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    display: flex;
+    background: var(--ink);
+    border-top: 2px solid rgba(245,242,236,0.15);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .org-bar-btn {
+    flex: 1;
+    padding: 14px 8px;
+    background: none;
+    border: none;
+    border-right: 1px solid rgba(245,242,236,0.12);
+    color: var(--on-dark);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    min-height: 48px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .org-bar-btn:last-child { border-right: none; }
+  .org-bar-btn:hover { background: rgba(245,242,236,0.08); }
+
+  .org-bar-btn--primary { color: var(--cream); font-weight: 700; }
+  .org-bar-btn--danger  { color: rgba(200,16,46,0.75); }
+
+  /* ── Organizer drawers ──────────────────────────────────────────────────── */
+  .org-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,15,14,0.5);
+    z-index: 100;
+  }
+
+  .org-overlay.open { display: block; }
+
+  .org-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 110;
+    background: var(--cream);
+    border-top: 2px solid var(--ink);
+    border-radius: 12px 12px 0 0;
+    max-height: 80vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .org-drawer.open { transform: translateY(0); }
+
+  .org-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--staff);
+    position: sticky;
+    top: 0;
+    background: var(--cream);
+    z-index: 1;
+  }
+
+  .org-drawer-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .org-drawer-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .org-drawer-body {
+    padding: 20px;
+  }
+
+  .org-drawer-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
 </style>
 
 <script>
   import { actions } from "astro:actions";
+
+  // ── Organizer bottom drawer ──────────────────────────────────────────────
+  const overlay = document.getElementById("org-overlay");
+
+  function openDrawer(id: string) {
+    closeAllDrawers();
+    document.getElementById(`drawer-${id}`)?.classList.add("open");
+    overlay?.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeAllDrawers() {
+    document.querySelectorAll(".org-drawer.open").forEach(d => d.classList.remove("open"));
+    overlay?.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  // Bar buttons open drawers
+  document.querySelectorAll<HTMLButtonElement>(".org-bar-btn[data-drawer]").forEach(btn => {
+    btn.addEventListener("click", () => openDrawer(btn.dataset.drawer!));
+  });
+
+  // Close buttons and overlay close all drawers
+  document.querySelectorAll(".org-drawer-close").forEach(btn => {
+    btn.addEventListener("click", closeAllDrawers);
+  });
+  overlay?.addEventListener("click", closeAllDrawers);
+
+  // If a drawer was open when the page loaded (e.g. after a lockError), re-open it
+  if (document.querySelector(".error-banner-inline") && document.getElementById("drawer-confirm")) {
+    openDrawer("confirm");
+  }
 
   // ── Auto-dismiss banners ─────────────────────────────────────────────────
   function dismissBanner(el: Element) {
