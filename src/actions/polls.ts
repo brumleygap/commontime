@@ -659,7 +659,7 @@ export const remindNonResponders = defineAction({
                 .prepare(`SELECT option_datetime FROM poll_options WHERE poll_id = ? ORDER BY option_datetime ASC`)
                 .bind(poll.id)
                 .all<{ option_datetime: string }>()
-        ).results.map(r => r.option_datetime);
+        ).results.map((r: { option_datetime: string }) => r.option_datetime);
 
         const isAdmin = userEmail === "ernie.braganza@gmail.com";
         if (!isAdmin && poll.last_reminded_at) {
