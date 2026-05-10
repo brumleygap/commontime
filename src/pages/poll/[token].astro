@@ -352,7 +352,7 @@ function cellColor(av: number | undefined): string {
         <div class="vote-card-head">
           <h2 class="vote-card-title">Your availability</h2>
           <p class="vote-card-sub">
-            {myParticipantId ? "Update your response below." : "Mark each time as yes, maybe, or busy."}
+            {myParticipantId ? "Update your response below." : "Mark each time as yes, if needed, or no."}
           </p>
         </div>
 
@@ -434,11 +434,11 @@ function cellColor(av: number | undefined): string {
             </div>
             <div class="vibe-legend-item" style="background:var(--maybe-bg)">
               <span style="color:var(--maybe);font-weight:700;">~</span>
-              <span class="vibe-legend-label" style="color:var(--maybe)">Maybe</span>
+              <span class="vibe-legend-label" style="color:var(--maybe-text)">If needed</span>
             </div>
             <div class="vibe-legend-item" style="background:var(--busy-bg)">
               <span style="color:var(--red);font-weight:700;">✕</span>
-              <span class="vibe-legend-label" style="color:var(--red)">Busy</span>
+              <span class="vibe-legend-label" style="color:var(--red)">No</span>
             </div>
           </div>
 
@@ -460,10 +460,10 @@ function cellColor(av: number | undefined): string {
                   >
                     <div class="time-bullet" data-bullet></div>
                     <div class="time-label">{fmtTime(opt.option_datetime)}</div>
-                    <div class="vibe-btns">
-                      <button type="button" class="vibe-btn" data-vibe="1" title="Yes">✓</button>
-                      <button type="button" class="vibe-btn" data-vibe="2" title="Maybe">~</button>
-                      <button type="button" class="vibe-btn" data-vibe="0" title="Busy">✕</button>
+                    <div class="vibe-pill">
+                      <button type="button" class="vibe-seg" data-vibe="1">Yes</button>
+                      <button type="button" class="vibe-seg" data-vibe="2">If needed</button>
+                      <button type="button" class="vibe-seg" data-vibe="0">No</button>
                     </div>
                   </div>
                 );
@@ -546,9 +546,9 @@ function cellColor(av: number | undefined): string {
       {participants.length > 0 && (
         <div class="grid-legend">
           <span><strong style="color:var(--yes)">✓</strong> Yes</span>
-          <span><strong style="color:var(--maybe)">~</strong> Maybe</span>
-          <span><strong style="color:var(--red)">✕</strong> Busy</span>
-          <span style="opacity:.55"><strong>—</strong> Pending</span>
+          <span><strong style="color:var(--maybe)">~</strong> If needed</span>
+          <span><strong style="color:var(--red)">✕</strong> No</span>
+          <span style="opacity:.55"><strong>—</strong> No response</span>
         </div>
       )}
     </div>
@@ -959,46 +959,50 @@ function cellColor(av: number | undefined): string {
     min-width: 0;
   }
 
-  .vibe-btns {
+  .vibe-pill {
     display: flex;
-    gap: 4px;
     flex-shrink: 0;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    overflow: hidden;
   }
 
-  .vibe-btn {
-    width: 44px;
-    height: 44px;
+  .vibe-seg {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 6px;
     font-family: 'DM Mono', monospace;
-    font-size: 16px;
-    border: 1px solid var(--btn-border);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    border: none;
+    border-right: 1.5px solid var(--ink);
     background: transparent;
-    color: var(--btn-inactive);
+    color: var(--muted);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     transition: all 0.1s;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    white-space: nowrap;
   }
 
-  .vibe-btn[data-vibe="1"].active {
+  .vibe-seg:last-child {
+    border-right: none;
+  }
+
+  .vibe-seg[data-vibe="1"].active {
     background: var(--yes-bg);
-    border-color: var(--yes);
     color: var(--yes);
     font-weight: 700;
   }
 
-  .vibe-btn[data-vibe="2"].active {
+  .vibe-seg[data-vibe="2"].active {
     background: var(--maybe-bg);
-    border-color: var(--maybe);
-    color: var(--maybe);
+    color: var(--maybe-text);
     font-weight: 700;
   }
 
-  .vibe-btn[data-vibe="0"].active {
+  .vibe-seg[data-vibe="0"].active {
     background: var(--busy-bg);
-    border-color: var(--red);
     color: var(--red);
     font-weight: 700;
   }
@@ -1781,19 +1785,18 @@ function cellColor(av: number | undefined): string {
     const init = parseInt(row.dataset.init ?? "-1", 10);
     state[id] = init >= 0 ? init : -1;
 
-    // Highlight the pre-existing vote button
+    // Highlight the pre-existing vote segment
     if (init >= 0) {
-      row.querySelector<HTMLButtonElement>(`.vibe-btn[data-vibe="${init}"]`)?.classList.add("active");
+      row.querySelector<HTMLButtonElement>(`.vibe-seg[data-vibe="${init}"]`)?.classList.add("active");
       applyBullet(row, init);
     }
 
-    // Wire up vibe buttons
-    row.querySelectorAll<HTMLButtonElement>(".vibe-btn").forEach((btn) => {
+    // Wire up pill segments
+    row.querySelectorAll<HTMLButtonElement>(".vibe-seg").forEach((btn) => {
       btn.addEventListener("click", () => {
         const vibe = parseInt(btn.dataset.vibe!, 10);
         state[id] = vibe;
-        // Toggle active class
-        row.querySelectorAll(".vibe-btn").forEach((b) => b.classList.remove("active"));
+        row.querySelectorAll(".vibe-seg").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         applyBullet(row, vibe);
       });
@@ -1806,7 +1809,7 @@ function cellColor(av: number | undefined): string {
     if (vibe === 1) bullet.style.background = "var(--yes)";
     else if (vibe === 2) bullet.style.background = "var(--maybe)";
     else if (vibe === 0) bullet.style.background = "var(--red)";
-    else bullet.style.background = "var(--bullet)";
+    else bullet.style.background = "var(--bullet)";  // unset
   }
 
   // ── Confirm Dates — disable submit when no checkbox is checked ──────────────
@@ -1822,26 +1825,21 @@ function cellColor(av: number | undefined): string {
   }
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
-    const voteData = Object.entries(state)
-      .filter(([, av]) => av >= 0)
-      .map(([optionId, availability]) => ({ optionId: parseInt(optionId, 10), availability }));
+    const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
+      .map((r) => parseInt(r.dataset.optionId!, 10));
+
+    // Only submit slots where the user made an explicit selection
+    const voteData = allIds
+      .filter(id => state[String(id)] >= 0)
+      .map(id => ({ optionId: id, availability: state[String(id)] }));
 
     if (voteData.length === 0) {
-      // Default all unset options to "busy" (0) so the submission is not empty
-      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
-        .map((r) => parseInt(r.dataset.optionId!, 10));
-      const fallback = allIds.map((id) => ({ optionId: id, availability: 0 }));
-      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(fallback);
-    } else {
-      // Fill in any unset options as busy
-      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
-        .map((r) => parseInt(r.dataset.optionId!, 10));
-      const full = allIds.map((id) => ({
-        optionId: id,
-        availability: state[String(id)] >= 0 ? state[String(id)] : 0,
-      }));
-      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(full);
+      e.preventDefault();
+      alert("Please select your availability for at least one time slot.");
+      return;
     }
+
+    (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(voteData);
   });
 </script>
 
