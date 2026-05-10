@@ -1050,27 +1050,35 @@ function cellColor(av: number | undefined): string {
     position: relative;
   }
 
+  @keyframes scroll-hint {
+    0%, 100% { transform: translateX(0);   opacity: 1; }
+    50%       { transform: translateX(5px); opacity: 0.5; }
+  }
+
   @media (max-width: 767px) {
     .avail-table-wrap::after {
-      content: '›';
+      content: '»';
       position: absolute;
       top: 0;
       right: 0;
       bottom: 0;
-      width: 48px;
-      background: linear-gradient(to right, transparent, var(--cream) 70%);
+      width: 56px;
+      background: linear-gradient(to right, transparent, var(--cream) 60%);
       display: flex;
       align-items: center;
       justify-content: flex-end;
       padding-right: 10px;
-      font-size: 22px;
-      color: var(--muted);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--ink);
       pointer-events: none;
       transition: opacity 0.25s;
+      animation: scroll-hint 1.4s ease-in-out infinite;
     }
 
     .avail-table-wrap.scroll-end::after {
       opacity: 0;
+      animation: none;
     }
   }
 
