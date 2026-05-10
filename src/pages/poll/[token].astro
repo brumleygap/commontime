@@ -627,7 +627,7 @@ function cellColor(av: number | undefined): string {
           <input type="hidden" name="token" value={token} />
 
           <div class="finalize-options">
-            {optionStats.map((opt, i) => {
+            {optionStats.map((opt) => {
               const isTop = opt.score === maxScore && opt.score > 0;
               return (
                 <label class={`finalize-option${isTop ? " top" : ""}`}>
