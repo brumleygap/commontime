@@ -22,6 +22,8 @@ const cancelError = cancelResult?.error;
 const deleteResult = await Astro.getActionResult(actions.deletePoll);
 if (deleteResult?.data?.ok) return Astro.redirect("/");
 
+const remindResult = await Astro.getActionResult(actions.remindNonResponders);
+
 
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
@@ -32,7 +34,7 @@ const welcomed = Astro.url.searchParams.get("welcomed") === "1";
 
 const poll = await db
   .prepare(
-    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at, rescheduled_poll_token, duration_minutes
+    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at, rescheduled_poll_token, duration_minutes, last_reminded_at
      FROM polls WHERE token = ?`
   )
   .bind(token)
@@ -48,6 +50,7 @@ const poll = await db
     cancelled_at: string | null;
     rescheduled_poll_token: string | null;
     duration_minutes: number;
+    last_reminded_at: string | null;
   }>();
 
 if (!poll) return new Response("Poll not found", { status: 404 });
@@ -171,6 +174,32 @@ if (currentUser) {
 const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.creator_id);
 const isCancelled = poll.cancelled_at !== null;
 const isOpen = poll.chosen_option_id === null && !isCancelled;
+
+// Non-responder count and reminder cooldown (creator only)
+let nonResponderCount = 0;
+let reminderCooldownHours: number | null = null;
+if (isCreator && isOpen) {
+  const nrRow = await db
+    .prepare(`
+      SELECT COUNT(*) AS n
+      FROM participants pa
+      LEFT JOIN users u ON u.id = pa.user_id
+      WHERE pa.poll_id = ?
+        AND COALESCE(u.email, pa.email) IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = pa.id)
+    `)
+    .bind(poll.id)
+    .first<{ n: number }>();
+  nonResponderCount = nrRow?.n ?? 0;
+
+  const isAdmin = currentUser?.email === "ernie.braganza@gmail.com";
+  if (!isAdmin && poll.last_reminded_at) {
+    const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
+    if (hoursElapsed < 24) {
+      reminderCooldownHours = Math.ceil(24 - hoursElapsed);
+    }
+  }
+}
 
 const chosenOptions = poll.chosen_option_id
   ? (await db
@@ -670,6 +699,49 @@ function cellColor(av: number | undefined): string {
       </div>
     </div>
 
+    <!-- Remind drawer -->
+    <div class="org-drawer" id="drawer-remind">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Remind non-responders</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        {remindResult?.data?.ok && (
+          <div class="remind-success">
+            Reminders sent to {remindResult.data.sent} {remindResult.data.sent === 1 ? "person" : "people"}.
+          </div>
+        )}
+        {remindResult?.error && (
+          <div class="error-banner-inline">
+            <strong>Couldn't send reminders.</strong>
+            <span>{remindResult.error.message}</span>
+          </div>
+        )}
+        {nonResponderCount === 0 ? (
+          <p class="org-drawer-sub">Everyone has responded — nothing to remind.</p>
+        ) : (
+          <>
+            <p class="org-drawer-sub">
+              {nonResponderCount} {nonResponderCount === 1 ? "person hasn't" : "people haven't"} responded yet.
+              They'll receive an email with a direct link to this poll.
+            </p>
+            {reminderCooldownHours !== null ? (
+              <p class="remind-cooldown">
+                Reminders were sent recently. You can send again in {reminderCooldownHours} hour{reminderCooldownHours !== 1 ? "s" : ""}.
+              </p>
+            ) : (
+              <form method="POST" action={actions.remindNonResponders}>
+                <input type="hidden" name="token" value={token} />
+                <button type="submit" class="invite-btn">
+                  Send reminders
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+
     <!-- Cancel drawer -->
     <div class="org-drawer" id="drawer-cancel">
       <div class="org-drawer-header">
@@ -699,6 +771,9 @@ function cellColor(av: number | undefined): string {
     <!-- Fixed bottom bar -->
     <div class="org-bar">
       <button class="org-bar-btn" data-drawer="invite">Invite</button>
+      <button class="org-bar-btn" data-drawer="remind">
+        Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
+      </button>
       <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">Confirm</button>
       <button class="org-bar-btn org-bar-btn--danger" data-drawer="cancel">Cancel</button>
     </div>
@@ -1402,6 +1477,22 @@ function cellColor(av: number | undefined): string {
   .cancel-btn:hover {
     background: var(--red);
     color: white;
+  }
+
+  .remind-success {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--green);
+    margin-bottom: 12px;
+  }
+
+  .remind-cooldown {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 12px;
   }
 
   .delete-btn {
