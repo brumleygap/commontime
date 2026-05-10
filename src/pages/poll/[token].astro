@@ -325,8 +325,7 @@ function cellColor(av: number | undefined): string {
   <!-- Poll header -->
   <div class="poll-header">
     <div class="mx-auto max-w-5xl px-4 py-6 relative z-10">
-      {currentUser && <a href="/" class="poll-back">← All Polls</a>}
-      <p class="poll-eyebrow">· Poll</p>
+      {currentUser && <a href="/" class="poll-back">All Polls</a>}
       <h1 class="poll-title">{poll.title}</h1>
       {poll.description && (
         <p class="poll-desc">{poll.description}</p>
@@ -709,7 +708,7 @@ function cellColor(av: number | undefined): string {
           <span id="remind-error-msg"></span>
         </div>
         {nonResponderCount === 0 ? (
-          <p class="org-drawer-sub">Everyone has responded — nothing to remind.</p>
+          <p class="org-drawer-sub">Everyone has responded — no one to remind.</p>
         ) : (
           <>
             <p class="org-drawer-sub">
@@ -799,17 +798,28 @@ function cellColor(av: number | undefined): string {
   }
 
   .poll-back {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    font-size: 12px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.7);
     text-decoration: none;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     transition: color 0.15s;
   }
+  .poll-back::before {
+    content: '←';
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: 0;
+    color: rgba(255,255,255,0.5);
+    transition: color 0.15s, transform 0.15s;
+  }
   .poll-back:hover { color: #fff; }
+  .poll-back:hover::before { color: #fff; transform: translateX(-2px); }
 
   .poll-eyebrow {
     font-family: 'DM Mono', monospace;
