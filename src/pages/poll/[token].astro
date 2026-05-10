@@ -580,7 +580,20 @@ function cellColor(av: number | undefined): string {
         <p class="org-drawer-sub">One entry per line. Include a name or just the email address.</p>
         <form id="bulk-invite-form" data-poll-token={token}>
           <div class="invite-field">
-            <label for="bulk-emails" class="field-label">People to invite</label>
+            <div class="invite-label-row">
+              <label for="bulk-emails" class="field-label">People to invite</label>
+              <div class="invite-info-wrap">
+                <button type="button" class="invite-info-btn" aria-label="Format help" id="invite-info-btn"><em>i</em></button>
+                <div class="invite-info-popup" id="invite-info-popup" hidden>
+                  <p class="invite-info-heading">Accepted formats</p>
+                  <ul class="invite-info-list">
+                    <li><code>Alice Smith &lt;alice@example.com&gt;</code></li>
+                    <li><code>alice@example.com</code></li>
+                  </ul>
+                  <p class="invite-info-note">One entry per line. Comma-separated emails also work. Names are optional — if omitted they're derived from the email address.</p>
+                </div>
+              </div>
+            </div>
             <textarea
               id="bulk-emails"
               name="emails"
@@ -1700,6 +1713,93 @@ function cellColor(av: number | undefined): string {
     border-color: var(--red);
   }
 
+  .invite-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .invite-label-row .field-label {
+    margin-bottom: 0;
+  }
+
+  .invite-info-wrap {
+    position: relative;
+  }
+
+  .invite-info-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: 'Libre Baskerville', serif;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .invite-info-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .invite-info-popup {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    z-index: 50;
+    width: 280px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 14px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+  }
+
+  .invite-info-heading {
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 10px;
+    color: var(--on-dark-dim);
+    margin-bottom: 8px;
+  }
+
+  .invite-info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .invite-info-list code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cream);
+    word-break: break-all;
+  }
+
+  .invite-info-note {
+    font-size: 11px;
+    color: var(--on-dark-dim);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
   .bulk-emails-input {
     width: 100%;
     border: 1px solid var(--staff);
@@ -2140,6 +2240,17 @@ function cellColor(av: number | undefined): string {
   });
 
   // ── Invite form — client-side submit to avoid page reload ────────────────
+  // ── Invite info popup ────────────────────────────────────────────────────
+  const infoBtn = document.getElementById("invite-info-btn");
+  const infoPopup = document.getElementById("invite-info-popup");
+  if (infoBtn && infoPopup) {
+    infoBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      infoPopup.hidden = !infoPopup.hidden;
+    });
+    document.addEventListener("click", () => { infoPopup.hidden = true; });
+  }
+
   const bulkInviteForm = document.getElementById("bulk-invite-form") as HTMLFormElement | null;
   if (bulkInviteForm) {
     bulkInviteForm.addEventListener("submit", async (e) => {
