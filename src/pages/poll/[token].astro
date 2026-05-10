@@ -290,12 +290,9 @@ function cellColor(av: number | undefined): string {
 <BaseLayout title={poll.title}>
   <!-- Poll header -->
   <div class="poll-header">
-    <div class="absolute right-0 top-0 overflow-hidden h-full w-32 pointer-events-none" aria-hidden="true">
-      <span class="ct-header-watermark">𝄴</span>
-    </div>
     <div class="mx-auto max-w-5xl px-4 py-6 relative z-10">
       {currentUser && <a href="/" class="poll-back">← Scheduling Polls</a>}
-      <p class="poll-eyebrow">♩ Poll</p>
+      <p class="poll-eyebrow">· Poll</p>
       <h1 class="poll-title">{poll.title}</h1>
       {poll.description && (
         <p class="poll-desc">{poll.description}</p>
@@ -320,7 +317,7 @@ function cellColor(av: number | undefined): string {
           )}
           {isCreator && !poll.rescheduled_poll_token && (
             <div class="reopen-section" style="border-top-color:rgba(200,16,46,0.2)">
-              <a href={`/create?from=${token}`} class="try-new-dates-btn-detail">♩ Try New Dates</a>
+              <a href={`/create?from=${token}`} class="try-new-dates-btn-detail">· Try New Dates</a>
             </div>
           )}
         </div>
@@ -602,7 +599,7 @@ function cellColor(av: number | undefined): string {
           </div>
 
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn" id="invite-btn">♩ Get link</button>
+            <button type="submit" class="invite-btn" id="invite-btn">· Get link</button>
           </div>
         </form>
       </div>
@@ -647,7 +644,7 @@ function cellColor(av: number | undefined): string {
 
           <div class="finalize-submit-row">
             <div class="finalize-submit-actions">
-              <a href={`/create?from=${token}`} class="try-new-dates-link">♩ Try New Dates</a>
+              <a href={`/create?from=${token}`} class="try-new-dates-link">· Try New Dates</a>
               <div class="finalize-confirm-group">
                 {respondedIds.size === 0 && (
                   <p class="finalize-waiting">Waiting for responses before confirming.</p>
@@ -690,7 +687,7 @@ function cellColor(av: number | undefined): string {
   /* ── Poll header ────────────────────────────────────────────────────── */
   .poll-header {
     background: var(--ink);
-    border-bottom: 3px solid var(--red);
+    border-bottom: 3px solid rgba(245,242,236,0.15);
     position: relative;
     overflow: hidden;
   }
@@ -726,7 +723,7 @@ function cellColor(av: number | undefined): string {
     font-size: 13px;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: var(--red);
+    color: var(--on-dark);
     margin-bottom: 8px;
   }
 
@@ -1753,7 +1750,7 @@ function cellColor(av: number | undefined): string {
       const { data, error } = await actions.inviteParticipants(new FormData(inviteForm));
 
       btn.disabled = false;
-      btn.textContent = "♩ Get link";
+      btn.textContent = "· Get link";
 
       if (error) {
         errorMsg.textContent = error.message ?? "Unknown error.";
