@@ -244,6 +244,7 @@ ${descHtml}<p style="margin:0 0 8px;font-size:14px;color:#555">We're looking at 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             to,
+            cc: organizerEmail,
             from: { email: "hello@commontime.app", name: "CommonTime" },
             replyTo: organizerEmail,
             subject: `Reminder: ${pollTitle}`,
