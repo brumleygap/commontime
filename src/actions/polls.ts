@@ -2,7 +2,7 @@ import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail } from "../lib/email";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail, sendReminderEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
 
@@ -629,6 +629,119 @@ export const unlockPoll = defineAction({
         await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
+    },
+});
+
+export const remindNonResponders = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to send reminders." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description, last_reminded_at FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null; last_reminded_at: string | null }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const isAdmin = userEmail === "ernie.braganza@gmail.com";
+        if (!isAdmin && poll.last_reminded_at) {
+            const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
+            if (hoursElapsed < 24) {
+                const hoursLeft = Math.ceil(24 - hoursElapsed);
+                throw new ActionError({
+                    code: "TOO_MANY_REQUESTS",
+                    message: `Reminders were sent recently. You can send again in ${hoursLeft} hour${hoursLeft !== 1 ? "s" : ""}.`,
+                });
+            }
+        }
+
+        const nonResponders = (
+            await db
+                .prepare(`
+                    SELECT pa.id, pa.user_id, pa.edit_token,
+                           COALESCE(u.email, pa.email) AS email,
+                           COALESCE(pa.name, u.name, 'there') AS name
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND COALESCE(u.email, pa.email) IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = pa.id)
+                `)
+                .bind(poll.id)
+                .all<{ id: number; user_id: number | null; edit_token: string; email: string; name: string }>()
+        ).results;
+
+        if (nonResponders.length === 0) {
+            return { ok: true, sent: 0 };
+        }
+
+        const origin = new URL(context.request.url).origin;
+        const creatorName = context.locals.user?.name ?? userEmail;
+        let sent = 0;
+
+        for (const recipient of nonResponders) {
+            try {
+                let recipientUserId = recipient.user_id;
+
+                if (!recipientUserId && recipient.email) {
+                    let user = await db
+                        .prepare(`SELECT id FROM users WHERE email = ?`)
+                        .bind(recipient.email)
+                        .first<{ id: number }>();
+                    if (!user) {
+                        user = await db
+                            .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id`)
+                            .bind(recipient.email, recipient.name)
+                            .first<{ id: number }>();
+                    }
+                    if (user) {
+                        recipientUserId = user.id;
+                        await db
+                            .prepare(`UPDATE participants SET user_id = ? WHERE id = ?`)
+                            .bind(recipientUserId, recipient.id)
+                            .run();
+                    }
+                }
+
+                let inviteUrl: string;
+                if (recipientUserId) {
+                    const inviteToken = makeToken(32);
+                    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                    await db
+                        .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                        .bind(poll.id, recipientUserId, userId, inviteToken, expiresAt)
+                        .run();
+                    inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+                } else {
+                    inviteUrl = `${origin}/poll/${input.token}?invite=${recipient.edit_token}`;
+                }
+
+                await sendReminderEmail(env.EMAIL, recipient.email, recipient.name, poll.title, inviteUrl, creatorName, userEmail);
+                sent++;
+            } catch (e) {
+                console.error(`remindNonResponders: failed for ${recipient.email}:`, e);
+            }
+        }
+
+        if (sent > 0) {
+            await db
+                .prepare(`UPDATE polls SET last_reminded_at = datetime('now') WHERE id = ?`)
+                .bind(poll.id)
+                .run();
+        }
+
+        return { ok: true, sent };
     },
 });
 

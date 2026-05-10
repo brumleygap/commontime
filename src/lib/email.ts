@@ -184,6 +184,38 @@ export async function sendRescheduleEmail(
     }
 }
 
+export async function sendReminderEmail(
+    emailBinding: Fetcher,
+    to: string,
+    recipientName: string,
+    pollTitle: string,
+    inviteUrl: string,
+    organizerName: string,
+    organizerEmail: string,
+) {
+    const response = await emailBinding.fetch("https://commontime-email-sender/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            to,
+            from: { email: "hello@commontime.app", name: "CommonTime" },
+            replyTo: organizerEmail,
+            subject: `Reminder: ${pollTitle}`,
+            text: `Hi ${recipientName},\n\n${organizerName} is still waiting for your response on "${pollTitle}".\n\nMark your availability:\n${inviteUrl}\n\nThis link signs you in automatically.`,
+            html: `<p>Hi <strong>${he(recipientName)}</strong>,</p>
+<p><strong>${he(organizerName)}</strong> is still waiting for your response on this poll:</p>
+<h2 style="font-family:Georgia,serif;margin:8px 0 16px">${he(pollTitle)}</h2>
+<p><a href="${inviteUrl}" style="color:#c8102e;font-weight:bold">Mark your availability →</a></p>
+<p style="color:#888;font-size:12px">This link signs you in automatically. CommonTime helps groups find a time that works for everyone.</p>`,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json() as { error?: string };
+        throw new Error(error?.error ?? `Email service returned ${response.status}`);
+    }
+}
+
 export async function sendMagicLinkEmail(
     emailBinding: Fetcher,
     to: string,
