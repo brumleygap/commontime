@@ -353,7 +353,7 @@ export async function sendMagicLinkEmail(
 ) {
     const textBody = `Click this link to log in to CommonTime. It expires in 15 minutes.\n\n${magicLink}\n\nIf you didn't request this, ignore this email.`;
 
-    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">Click below to log in to CommonTime. This link expires in 15 minutes.</p>
+    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">Click below to log in to CommonTime so we can find a meeting time. This link expires in 15 minutes.</p>
 ${btn(magicLink, "Log in to CommonTime →")}
 <p style="margin:16px 0 0;font-size:12px;color:#999;font-family:Arial,Helvetica,sans-serif;">If you didn't request this, you can safely ignore this email.</p>`;
 
