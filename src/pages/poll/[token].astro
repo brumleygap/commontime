@@ -1938,10 +1938,6 @@ function cellColor(av: number | undefined): string {
   });
   overlay?.addEventListener("click", closeAllDrawers);
 
-  // If a drawer was open when the page loaded (e.g. after a lockError), re-open it
-  if (document.querySelector(".error-banner-inline") && document.getElementById("drawer-confirm")) {
-    openDrawer("confirm");
-  }
 
   // ── Auto-dismiss banners ─────────────────────────────────────────────────
   function dismissBanner(el: Element) {
