@@ -376,6 +376,7 @@ function cellColor(av: number | undefined): string {
                 <input type="hidden" name="token" value={token} />
                 <button type="submit" class="reopen-btn">Re-open for voting</button>
               </form>
+              <a href={`/poll/${poll.token}/edit`} class="edit-details-link">Edit title or description →</a>
             </div>
           )}
         </div>
@@ -761,6 +762,7 @@ function cellColor(av: number | undefined): string {
       <button class="org-bar-btn" data-drawer="remind">
         Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
       </button>
+      <a href={`/poll/${poll.token}/edit`} class="org-bar-btn">Edit</a>
       <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">Confirm</button>
       <button class="org-bar-btn org-bar-btn--danger" data-drawer="cancel">Cancel</button>
     </div>
@@ -1592,6 +1594,17 @@ function cellColor(av: number | undefined): string {
   .reopen-btn:hover {
     border-color: var(--ink);
     color: var(--ink);
+  }
+
+  .edit-details-link {
+    display: inline-block;
+    margin-top: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .finalized-cal-link {
