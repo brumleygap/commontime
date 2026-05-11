@@ -814,14 +814,14 @@ export const editPoll = defineAction({
             return { ok: true, token: input.token };
         }
 
-        const currentOptions = (
+        const currentOptions: { id: number; option_datetime: string }[] = (
             await db
                 .prepare(`SELECT id, option_datetime FROM poll_options WHERE poll_id = ?`)
                 .bind(poll.id)
                 .all<{ id: number; option_datetime: string }>()
         ).results;
 
-        const currentById = new Map(currentOptions.map(o => [o.id, o.option_datetime]));
+        const currentById = new Map<number, string>(currentOptions.map(o => [o.id, o.option_datetime] as [number, string]));
 
         const removedIds: number[] = [];
         const insertDatetimes: string[] = [];
