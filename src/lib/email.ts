@@ -346,6 +346,43 @@ ${btn(inviteUrl, "Mark your availability →")}
     }
 }
 
+export async function sendPollEditedEmail(
+    emailBinding: Fetcher,
+    to: string,
+    pollTitle: string,
+    pollDescription: string | null,
+    pollUrl: string,
+    organizerEmail: string,
+) {
+    const descHtml = pollDescription
+        ? `<p style="font-size:14px;color:#555;font-style:italic;margin:0 0 20px;font-family:Arial,Helvetica,sans-serif;">${he(pollDescription)}</p>`
+        : "";
+
+    const textBody = `The organizer has updated the date options for "${pollTitle}". Check the poll to review the new times.\n\n${pollUrl}`;
+
+    const htmlBody = `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;">The organizer has updated the date options for:</p>
+<h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
+${descHtml}${btn(pollUrl, "Review the updated times →")}`;
+
+    const response = await emailBinding.fetch("https://commontime-email-sender/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            to,
+            from: { email: "hello@commontime.app", name: "CommonTime" },
+            replyTo: organizerEmail,
+            subject: `Updated: ${pollTitle}`,
+            text: textBody,
+            html: wrap(htmlBody),
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json() as { error?: string };
+        throw new Error(error?.error ?? `Email service returned ${response.status}`);
+    }
+}
+
 export async function sendMagicLinkEmail(
     emailBinding: Fetcher,
     to: string,
