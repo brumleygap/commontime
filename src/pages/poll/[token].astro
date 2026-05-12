@@ -761,6 +761,7 @@ function cellColor(av: number | undefined): string {
       <button class="org-bar-btn" data-drawer="remind">
         Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
       </button>
+      <a href={`/poll/${token}/manage`} class="org-bar-btn">Links</a>
       <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">Confirm</button>
       <button class="org-bar-btn org-bar-btn--danger" data-drawer="cancel">Cancel</button>
     </div>
@@ -2122,6 +2123,7 @@ function cellColor(av: number | undefined): string {
 
   .org-bar-btn:last-child { border-right: none; }
   .org-bar-btn:hover { background: rgba(245,242,236,0.08); }
+  a.org-bar-btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
 
   .org-bar-btn--primary { color: var(--cream); font-weight: 700; }
   .org-bar-btn--danger  { color: var(--on-dark); }

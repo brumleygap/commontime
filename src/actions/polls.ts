@@ -752,6 +752,56 @@ export const remindNonResponders = defineAction({
     },
 });
 
+export const renewInvite = defineAction({
+    accept: "form",
+    input: z.object({
+        pollToken: z.string(),
+        participantId: z.coerce.number().int(),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.pollToken, userId)
+            .first<{ id: number }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const participant = await db
+            .prepare(`SELECT user_id FROM participants WHERE id = ? AND poll_id = ?`)
+            .bind(input.participantId, poll.id)
+            .first<{ user_id: number | null }>();
+
+        if (!participant) {
+            throw new ActionError({ code: "NOT_FOUND", message: "Participant not found." });
+        }
+
+        if (!participant.user_id) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "This participant has no account — use the edit_token link instead." });
+        }
+
+        const newToken = makeToken(32);
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        await db
+            .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+            .bind(poll.id, participant.user_id, userId, newToken, expiresAt)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        return { ok: true, inviteUrl: `${origin}/auth/invite?token=${newToken}`, expiresAt };
+    },
+});
+
 export const deletePoll = defineAction({
     accept: "form",
     input: z.object({ token: z.string().min(1) }),

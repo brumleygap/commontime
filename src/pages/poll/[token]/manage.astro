@@ -1,0 +1,343 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { actions } from "astro:actions";
+import { env } from "cloudflare:workers";
+
+const { token } = Astro.params;
+
+const currentUser = Astro.locals.user;
+if (!currentUser) {
+  return Astro.redirect(`/login?next=/poll/${token}/manage`);
+}
+
+const db = env.DB;
+
+const poll = await db
+  .prepare(`SELECT id, title, token FROM polls WHERE token = ? AND creator_id = ?`)
+  .bind(token, currentUser.id)
+  .first<{ id: number; title: string; token: string }>();
+
+if (!poll) return new Response("Not found", { status: 404 });
+
+const participants = (
+  await db
+    .prepare(`
+      WITH latest_invite AS (
+        SELECT invitee_user_id, MAX(id) AS id
+        FROM invites
+        WHERE poll_id = ?
+        GROUP BY invitee_user_id
+      )
+      SELECT
+        p.id,
+        p.name,
+        p.edit_token,
+        p.user_id,
+        COALESCE(p.email, u.email) AS email,
+        i.id AS invite_id,
+        i.token AS invite_token,
+        i.expires_at AS invite_expires_at,
+        i.used_at AS invite_used_at,
+        (SELECT COUNT(*) FROM votes WHERE participant_id = p.id) AS vote_count
+      FROM participants p
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN latest_invite li ON li.invitee_user_id = p.user_id
+      LEFT JOIN invites i ON i.id = li.id
+      WHERE p.poll_id = ?
+      ORDER BY p.created_at ASC
+    `)
+    .bind(poll.id, poll.id)
+    .all<{
+      id: number;
+      name: string | null;
+      edit_token: string;
+      user_id: number | null;
+      email: string | null;
+      invite_id: number | null;
+      invite_token: string | null;
+      invite_expires_at: string | null;
+      invite_used_at: string | null;
+      vote_count: number;
+    }>()
+).results;
+
+const origin = new URL(Astro.request.url).origin;
+
+type LinkInfo = { url: string; expires: string | null; expired: boolean; canRenew: boolean };
+
+function getLinkInfo(p: typeof participants[0]): LinkInfo {
+  if (p.invite_token && p.invite_expires_at) {
+    const expired = new Date(p.invite_expires_at) < new Date() || !!p.invite_used_at;
+    return {
+      url: `${origin}/auth/invite?token=${p.invite_token}`,
+      expires: p.invite_expires_at,
+      expired,
+      canRenew: !!p.user_id,
+    };
+  }
+  if (p.edit_token) {
+    return {
+      url: `${origin}/poll/${token}?invite=${p.edit_token}`,
+      expires: null,
+      expired: false,
+      canRenew: false,
+    };
+  }
+  return { url: `${origin}/poll/${token}`, expires: null, expired: false, canRenew: false };
+}
+
+function fmtExpiry(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+---
+
+<BaseLayout title={`Manage — ${poll.title}`}>
+  <div class="manage-wrap">
+    <a href={`/poll/${poll.token}`} class="back-link">← Back to poll</a>
+    <h1 class="manage-title">{poll.title}</h1>
+    <p class="manage-sub">Individual links for each participant. Copy a link to include in a text message.</p>
+
+    {participants.length === 0 ? (
+      <p class="empty-msg">No participants yet.</p>
+    ) : (
+      <div class="participant-list">
+        {participants.map((p) => {
+          const link = getLinkInfo(p);
+          return (
+            <div class="p-card" data-participant-id={p.id}>
+              <div class="p-card-header">
+                <span class="p-name">{p.name ?? <em>Anonymous</em>}</span>
+                <span class={`p-status ${p.vote_count > 0 ? "responded" : "pending"}`}>
+                  {p.vote_count > 0 ? "Responded" : "Pending"}
+                </span>
+              </div>
+              {p.email && <div class="p-email">{p.email}</div>}
+              <div class="p-link-row">
+                <code class="p-link" data-url={link.url}>{link.url}</code>
+              </div>
+              <div class="p-actions">
+                {link.expires && (
+                  <span class={`p-expiry ${link.expired ? "expired" : ""}`} data-expiry>
+                    {link.expired ? "Expired" : "Expires"} {fmtExpiry(link.expires)}
+                  </span>
+                )}
+                <button
+                  class="p-btn copy-btn"
+                  data-url={link.url}
+                  type="button"
+                >
+                  Copy link
+                </button>
+                {link.canRenew && (
+                  <button
+                    class="p-btn renew-btn"
+                    data-participant-id={p.id}
+                    data-poll-token={token}
+                    type="button"
+                  >
+                    {link.expired ? "Renew" : "Renew +7d"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .manage-wrap {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+  }
+
+  .back-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .back-link:hover { color: var(--ink); }
+
+  .manage-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 6px;
+  }
+
+  .manage-sub {
+    font-size: 14px;
+    color: var(--muted);
+    margin: 0 0 28px;
+  }
+
+  .empty-msg {
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .participant-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .p-card {
+    background: white;
+    border: 1px solid var(--staff);
+    border-radius: 6px;
+    padding: 16px;
+  }
+
+  .p-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .p-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .p-status {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .p-status.responded {
+    background: var(--green-light);
+    color: var(--green);
+  }
+  .p-status.pending {
+    background: #f5f2ec;
+    color: var(--muted);
+  }
+
+  .p-email {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .p-link-row {
+    margin-bottom: 10px;
+  }
+
+  .p-link {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--ink);
+    background: var(--cream);
+    border: 1px solid var(--staff);
+    border-radius: 3px;
+    padding: 5px 8px;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: break-all;
+  }
+
+  .p-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .p-expiry {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .p-expiry.expired {
+    color: var(--red);
+  }
+
+  .p-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--staff);
+    background: white;
+    color: var(--ink);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .p-btn:hover { background: var(--cream); }
+  .p-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .renew-btn {
+    border-color: var(--ink);
+  }
+</style>
+
+<script>
+  import { actions } from "astro:actions";
+
+  // Copy buttons
+  document.querySelectorAll<HTMLButtonElement>(".copy-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const url = btn.dataset.url!;
+      await navigator.clipboard.writeText(url);
+      const orig = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+  });
+
+  // Renew buttons
+  document.querySelectorAll<HTMLButtonElement>(".renew-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "Renewing…";
+
+      const fd = new FormData();
+      fd.append("pollToken", btn.dataset.pollToken!);
+      fd.append("participantId", btn.dataset.participantId!);
+
+      const { data, error } = await actions.renewInvite(fd);
+
+      if (error) {
+        btn.disabled = false;
+        btn.textContent = "Renew";
+        alert(error.message ?? "Failed to renew.");
+        return;
+      }
+
+      // Update the card's link and expiry in place
+      const card = btn.closest<HTMLElement>(".p-card")!;
+      const linkEl = card.querySelector<HTMLElement>(".p-link")!;
+      const copyBtn = card.querySelector<HTMLButtonElement>(".copy-btn")!;
+      const expiryEl = card.querySelector<HTMLElement>("[data-expiry]");
+
+      linkEl.textContent = data!.inviteUrl;
+      linkEl.dataset.url = data!.inviteUrl;
+      copyBtn.dataset.url = data!.inviteUrl;
+
+      if (expiryEl) {
+        const exp = new Date(data!.expiresAt);
+        expiryEl.textContent = "Expires " + exp.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        expiryEl.classList.remove("expired");
+      }
+
+      btn.disabled = false;
+      btn.textContent = "Renew +7d";
+    });
+  });
+</script>
