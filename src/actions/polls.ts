@@ -70,7 +70,13 @@ export const createPoll = defineAction({
                 ).bind(pollId, dt)
             );
 
-            await db.batch(optionInserts);
+            try {
+                await db.batch(optionInserts);
+            } catch (e) {
+                // Poll row was created but options failed — remove the orphan.
+                await db.prepare(`DELETE FROM polls WHERE id = ?`).bind(pollId).run();
+                throw e;
+            }
 
             // If this poll is a reschedule of an existing poll, cancel the old one
             // and copy its participants to the new poll
@@ -294,22 +300,24 @@ export const inviteParticipants = defineAction({
                 .bind(poll.id, invitee.id)
                 .first<{ id: number; edit_token: string }>();
 
-            if (existing) {
-                editToken = existing.edit_token;
-            } else {
-                editToken = makeToken(8);
-                await db
-                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
-                    .bind(poll.id, inviteeName, editToken, invitee.id, inviteeEmail)
-                    .run();
-            }
-
             const inviteToken = makeToken(32);
             const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-            await db
-                .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
-                .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
-                .run();
+
+            if (existing) {
+                editToken = existing.edit_token;
+                await db
+                    .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
+                    .run();
+            } else {
+                editToken = makeToken(8);
+                await db.batch([
+                    db.prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                        .bind(poll.id, inviteeName, editToken, invitee.id, inviteeEmail),
+                    db.prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                        .bind(poll.id, invitee.id, userId, inviteToken, expiresAt),
+                ]);
+            }
 
             const origin = new URL(context.request.url).origin;
             const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
