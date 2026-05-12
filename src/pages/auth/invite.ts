@@ -15,7 +15,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
             `SELECT i.id, i.invitee_user_id, p.token AS poll_token
              FROM invites i
              JOIN polls p ON p.id = i.poll_id
-             WHERE i.token = ? AND i.used_at IS NULL AND i.expires_at > ?`
+             WHERE i.token = ? AND i.expires_at > ?`
         )
         .bind(token, now)
         .first<{ id: number; invitee_user_id: number; poll_token: string }>();
