@@ -20,18 +20,18 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 
 ### Low-medium priority
 
-- [ ] **#7 `makeToken()` modulo bias** (`src/lib/tokens.ts:5`) — Alphabet is 57 chars; `b % 57` on a 0–255 byte gives indices 0–27 a ~25% higher hit rate. Fix: rejection sampling (discard bytes ≥ 228).
-- [ ] **#8 Sessions never rotated** (`src/pages/auth/verify.ts`, `src/pages/auth/passkey-authenticate.ts`) — Session token issued at login lives 7 days with no rotation. A stolen cookie is valid for the full window.
+- [ ] **#7 `makeToken()` modulo bias** (`src/lib/tokens.ts:6`) — Alphabet is 57 chars; `b % 57` on a 0–255 byte gives indices 0–27 a ~25% higher hit rate. Fix: rejection sampling (discard bytes ≥ 228).
+- [ ] **#8 Sessions never rotated** (`src/pages/auth/verify.ts:30`, `src/pages/auth/passkey-authenticate.ts:85`) — Session token issued at login lives 7 days with no rotation. A stolen cookie is valid for the full window.
 
 ### Low priority
 
 - [ ] **#9 `toBase64url` spread risk** (`src/lib/webpush.ts:15`) — `String.fromCharCode(...buf)` spreads all bytes as function args; hits V8 arg-count limit on large buffers. Use a loop instead.
 - [x] **#10 Dead code `onesignal.ts`** (`src/lib/onesignal.ts`) — Deprecated, not imported. Delete it. ✅ Fixed 2026-05-12
-- [ ] **#11 `VAPID_SUBJECT` unvalidated** (`src/lib/webpush.ts:129`) — Must be a `mailto:` or `https://` URI per spec; misconfiguration causes silent push failures.
+- [ ] **#11 `VAPID_SUBJECT` unvalidated** (`src/lib/webpush.ts:129`) — `vapid.subject` is passed straight to the JWT `sub` claim; must be a `mailto:` or `https://` URI per spec. Misconfiguration causes silent push failures.
 
 ### Awareness (no action required now)
 
-- [ ] **#12 Middleware DB hit on every request** (`src/middleware.ts:14`) — Session join query on every request. Unavoidable without KV-backed sessions; revisit if latency becomes an issue.
+- [ ] **#12 Middleware DB hit on every request** (`src/middleware.ts:15`) — Session join query on every request. Unavoidable without KV-backed sessions; revisit if latency becomes an issue.
 
 ---
 
