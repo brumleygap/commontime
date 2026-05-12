@@ -74,7 +74,7 @@ function getLinkInfo(p: typeof participants[0]): LinkInfo {
     const expired = dateExpired;
 
     let expiryLabel: string;
-    if (used && !dateExpired) {
+    if (used && !dateExpired && p.vote_count === 0) {
       expiryLabel = "Link opened — not voted";
     } else if (dateExpired) {
       expiryLabel = `Expired ${fmtDate(p.invite_expires_at)}`;
