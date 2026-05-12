@@ -71,7 +71,7 @@ function getLinkInfo(p: typeof participants[0]): LinkInfo {
   if (p.invite_token && p.invite_expires_at) {
     const dateExpired = new Date(p.invite_expires_at) < new Date();
     const used = !!p.invite_used_at;
-    const expired = dateExpired || used;
+    const expired = dateExpired;
 
     let expiryLabel: string;
     if (used && !dateExpired) {
