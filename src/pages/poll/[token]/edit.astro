@@ -1,0 +1,546 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { actions } from "astro:actions";
+import { env } from "cloudflare:workers";
+
+const result = await Astro.getActionResult(actions.editPoll);
+if (result?.data?.ok) {
+  return Astro.redirect(`/poll/${result.data.token}`);
+}
+
+const { token } = Astro.params;
+
+const poll = await env.DB
+  .prepare(`SELECT id, token, title, description, duration_minutes, chosen_option_id, creator_id FROM polls WHERE token = ?`)
+  .bind(token)
+  .first<{ id: number; token: string; title: string; description: string | null; duration_minutes: number; chosen_option_id: number | null; creator_id: number | null }>();
+
+if (!poll) return Astro.redirect("/");
+
+const currentUser = Astro.locals.user;
+if (!currentUser || currentUser.id !== poll.creator_id) {
+  return Astro.redirect(`/poll/${token}`);
+}
+
+const isLocked = poll.chosen_option_id !== null;
+
+type OptionRow = { id: number; option_datetime: string; vote_count: number };
+let options: OptionRow[] = [];
+if (!isLocked) {
+  options = (
+    await env.DB
+      .prepare(`
+        SELECT po.id, po.option_datetime, COUNT(v.id) AS vote_count
+        FROM poll_options po
+        LEFT JOIN votes v ON v.option_id = po.id
+        WHERE po.poll_id = ?
+        GROUP BY po.id
+        ORDER BY po.option_datetime ASC
+      `)
+      .bind(poll.id)
+      .all<OptionRow>()
+  ).results;
+}
+---
+
+<BaseLayout title={`Edit: ${poll.title}`}>
+  <section class="relative overflow-hidden">
+    <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
+
+    <div class="relative z-10 mx-auto max-w-2xl px-4 py-10">
+      <div class="page-header">
+        <p class="ct-eyebrow mb-1">Edit poll</p>
+        <h1 class="page-title">Fix the <em>details</em></h1>
+      </div>
+
+      {result?.error && (
+        <div class="error-banner">
+          <strong>Error:</strong> {result.error.message}
+        </div>
+      )}
+
+      <form method="POST" action={actions.editPoll} id="edit-form" class="create-card">
+        <input type="hidden" name="token" value={poll.token} />
+        <input type="hidden" name="options" id="options-data" />
+
+        <div class="field-group">
+          <label for="title" class="field-label">Poll title</label>
+          <input
+            id="title"
+            name="title"
+            type="text"
+            required
+            autocomplete="off"
+            class="field-input"
+            value={poll.title}
+          />
+        </div>
+
+        <div class="field-group">
+          <label for="description" class="field-label">
+            Description <span class="field-label-optional">(optional)</span>
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            rows="3"
+            class="field-textarea"
+            placeholder="Add any context or notes…"
+          >{poll.description ?? ""}</textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="duration" class="field-label">Meeting duration</label>
+          <select id="duration" name="duration" class="field-select">
+            <option value="15"  selected={poll.duration_minutes === 15}>15 minutes</option>
+            <option value="30"  selected={poll.duration_minutes === 30}>30 minutes</option>
+            <option value="45"  selected={poll.duration_minutes === 45}>45 minutes</option>
+            <option value="60"  selected={poll.duration_minutes === 60 || poll.duration_minutes == null}>1 hour</option>
+            <option value="90"  selected={poll.duration_minutes === 90}>1.5 hours</option>
+            <option value="120" selected={poll.duration_minutes === 120}>2 hours</option>
+            <option value="180" selected={poll.duration_minutes === 180}>3 hours</option>
+          </select>
+        </div>
+
+        <div class="section-divider">
+          <div class="divider-line"></div>
+          <span class="divider-label">· Date &amp; time options</span>
+          <div class="divider-line"></div>
+        </div>
+
+        {isLocked ? (
+          <p class="locked-notice">Date options are locked. Unlock the poll first if you need to change them.</p>
+        ) : (
+          <>
+            <div id="slots-container">
+              {options.map(opt => (
+                <div
+                  class="datetime-slot"
+                  data-option-id={String(opt.id)}
+                  data-votes={String(opt.vote_count)}
+                  data-original-value={opt.option_datetime}
+                >
+                  <span class="slot-icon" aria-hidden="true">·</span>
+                  <input
+                    type="datetime-local"
+                    class="slot-input datetime-option"
+                    value={opt.option_datetime}
+                  />
+                  {opt.vote_count > 0 && (
+                    <span class="vote-badge" title={`${opt.vote_count} vote${opt.vote_count !== 1 ? "s" : ""}`}>
+                      {opt.vote_count}
+                    </span>
+                  )}
+                  <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
+                </div>
+              ))}
+            </div>
+
+            <button type="button" id="add-slot" class="add-slot-btn">
+              <span aria-hidden="true">+</span> Add another time
+            </button>
+          </>
+        )}
+
+        <div class="form-actions">
+          <a href={`/poll/${poll.token}`} class="btn-ghost">Cancel</a>
+          <button type="submit" class="ct-btn">
+            Save changes →
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-header {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--staff);
+  }
+
+  .page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(28px, 6vw, 40px);
+    font-weight: 900;
+    color: var(--ink);
+    line-height: 1.1;
+  }
+
+  .page-title em {
+    color: var(--red);
+    font-style: italic;
+  }
+
+  .error-banner {
+    margin-bottom: 20px;
+    padding: 14px 18px;
+    background: var(--busy-bg);
+    border-left: 3px solid var(--red);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 17px;
+    color: var(--ink);
+  }
+
+  .create-card {
+    background: var(--white);
+    border: 1px solid var(--staff);
+    border-top: 3px solid var(--red);
+    padding: 28px 24px;
+  }
+
+  .field-group {
+    margin-bottom: 24px;
+  }
+
+  .field-label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .field-label-optional {
+    font-style: italic;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.65;
+  }
+
+  .field-input {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 18px;
+    color: var(--ink);
+    padding: 8px 0 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus {
+    border-color: var(--red);
+  }
+
+  .field-select {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 18px;
+    color: var(--ink);
+    padding: 8px 0 10px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230f0f0e' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    padding-right: 24px;
+  }
+
+  .field-select:focus {
+    border-color: var(--red);
+  }
+
+  .field-textarea {
+    width: 100%;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--ink);
+    background: var(--white);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 18px;
+    color: var(--ink);
+    padding: 12px 14px;
+    outline: none;
+    resize: vertical;
+    min-height: 90px;
+    transition: border-color 0.2s;
+  }
+
+  .field-textarea:focus {
+    border-color: var(--red);
+    border-left-color: var(--red);
+  }
+
+  .field-textarea::placeholder {
+    color: var(--placeholder);
+  }
+
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 28px 0 18px;
+  }
+
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--staff);
+  }
+
+  .divider-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .locked-notice {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--muted);
+    margin-bottom: 28px;
+    padding: 12px 16px;
+    background: var(--maybe-bg);
+    border-left: 3px solid var(--maybe);
+  }
+
+  .datetime-slot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--red);
+    background: var(--white);
+    margin-bottom: 10px;
+  }
+
+  .slot-icon {
+    color: var(--red);
+    font-size: 16px;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+
+  .slot-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 18px;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .vote-badge {
+    flex-shrink: 0;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--maybe-bg);
+    border: 1px solid var(--maybe);
+    border-radius: 2px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
+  .slot-remove {
+    background: none;
+    border: none;
+    color: var(--placeholder);
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+    padding: 0 8px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .slot-remove:hover {
+    color: var(--red);
+  }
+
+  .add-slot-btn {
+    width: 100%;
+    padding: 14px;
+    border: 1px dashed var(--staff);
+    background: transparent;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s;
+    margin-bottom: 28px;
+    min-height: 48px;
+  }
+
+  .add-slot-btn:hover {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .btn-ghost {
+    background: none;
+    border: none;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 17px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 10px 12px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 480px) {
+    .form-actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+
+    .form-actions .ct-btn {
+      justify-content: center;
+    }
+
+    .form-actions .btn-ghost {
+      text-align: center;
+    }
+
+    .create-card {
+      padding: 20px 16px;
+    }
+  }
+</style>
+
+<script>
+  const container = document.getElementById("slots-container");
+  const addBtn = document.getElementById("add-slot");
+  const form = document.getElementById("edit-form") as HTMLFormElement | null;
+  const optionsData = document.getElementById("options-data") as HTMLInputElement | null;
+
+  if (!container || !form || !optionsData) {
+    // Locked poll — no options section, nothing to wire up
+  } else {
+    function makeSlot(): HTMLDivElement {
+      const div = document.createElement("div");
+      div.className = "datetime-slot";
+      div.innerHTML = `
+        <span class="slot-icon" aria-hidden="true">·</span>
+        <input type="datetime-local" class="slot-input datetime-option" />
+        <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
+      `;
+      div.querySelector(".slot-remove")!.addEventListener("click", () => {
+        if (container!.querySelectorAll(".datetime-slot").length > 1) {
+          div.remove();
+        }
+      });
+      return div;
+    }
+
+    container.querySelectorAll<HTMLElement>(".slot-remove").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (container!.querySelectorAll(".datetime-slot").length > 1) {
+          btn.closest(".datetime-slot")?.remove();
+        }
+      });
+    });
+
+    addBtn?.addEventListener("click", () => {
+      container!.appendChild(makeSlot());
+    });
+
+    form.addEventListener("submit", (e) => {
+      const allSlots = Array.from(container!.querySelectorAll<HTMLElement>(".datetime-slot"));
+
+      // Count total votes on slots that are being removed or modified
+      const originalIds = new Set(
+        Array.from(container!.querySelectorAll<HTMLElement>("[data-option-id]")).map(el => el.dataset.optionId!)
+      );
+
+      let affectedVotes = 0;
+      // Existing slots still in DOM
+      const keptOriginalIds = new Set<string>();
+      for (const slot of allSlots) {
+        const optId = slot.dataset.optionId;
+        if (optId) keptOriginalIds.add(optId);
+      }
+      // Removed slots (had an optionId but are no longer in DOM)
+      // We need to check the *original* set of slots rendered by the server
+      // Those are tracked by data-option-id on any element — but removed ones are gone from DOM.
+      // Instead, check each remaining slot with an optionId for value changes.
+      for (const slot of allSlots) {
+        const optId = slot.dataset.optionId;
+        const votes = parseInt(slot.dataset.votes ?? "0", 10);
+        const originalVal = slot.dataset.originalValue ?? "";
+        const currentVal = (slot.querySelector<HTMLInputElement>(".datetime-option")?.value ?? "").trim();
+        if (optId && votes > 0 && currentVal !== originalVal) {
+          affectedVotes += votes;
+        }
+      }
+
+      // Also count votes on server-rendered slots that were removed from the DOM
+      // We can't do this client-side without tracking them — they're gone.
+      // Use a hidden data store: record all original slots on page load.
+      const trackedSlots = (window as any).__originalSlots as Array<{ id: string; votes: number }> | undefined;
+      if (trackedSlots) {
+        for (const orig of trackedSlots) {
+          if (!keptOriginalIds.has(orig.id) && orig.votes > 0) {
+            affectedVotes += orig.votes;
+          }
+        }
+      }
+
+      if (affectedVotes > 0) {
+        const ok = confirm(`Saving will remove ${affectedVotes} vote${affectedVotes !== 1 ? "s" : ""} on changed or deleted options. Continue?`);
+        if (!ok) {
+          e.preventDefault();
+          return;
+        }
+      }
+
+      const payload = allSlots.map(slot => {
+        const optId = slot.dataset.optionId;
+        const datetime = (slot.querySelector<HTMLInputElement>(".datetime-option")?.value ?? "").trim();
+        return { id: optId ? parseInt(optId, 10) : null, datetime };
+      }).filter(o => o.datetime.length > 0);
+
+      if (payload.length === 0) {
+        e.preventDefault();
+        alert("Please keep at least one date & time option.");
+        return;
+      }
+
+      optionsData!.value = JSON.stringify(payload);
+    });
+
+    // Store original slot info for removal tracking
+    (window as any).__originalSlots = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-option-id]")
+    ).map(el => ({
+      id: el.dataset.optionId!,
+      votes: parseInt(el.dataset.votes ?? "0", 10),
+    }));
+  }
+</script>

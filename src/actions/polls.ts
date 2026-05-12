@@ -1,8 +1,8 @@
 import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
-import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail } from "../lib/email";
+import { CreatePollSchema, EditPollSchema } from "./schemas/polls";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail, sendReminderEmail, sendPollEditedEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
 
@@ -12,7 +12,7 @@ export const createPoll = defineAction({
 
     handler: async (input, context) => {
         try {
-            const { title, description, timezone, options } = input;
+            const { title, description, timezone, options, duration } = input;
 
             const db = env.DB;
             const token = makeToken();
@@ -21,11 +21,11 @@ export const createPoll = defineAction({
 
             const pollInsert = await db
                 .prepare(
-                    `INSERT INTO polls (token, title, description, timezone, creator_id)
-           VALUES (?, ?, ?, ?, ?)
+                    `INSERT INTO polls (token, title, description, timezone, creator_id, duration_minutes)
+           VALUES (?, ?, ?, ?, ?, ?)
            RETURNING id`
                 )
-                .bind(token, title, description ?? null, timezone, creatorId)
+                .bind(token, title, description ?? null, timezone, creatorId, duration)
                 .first<{ id: number }>();
 
             if (!pollInsert || !pollInsert.id) {
@@ -107,7 +107,7 @@ export const createPoll = defineAction({
 
                     await Promise.allSettled(
                         recipients.map(r =>
-                            sendRescheduleEmail(env.EMAIL, r.email, title, newPollUrl, organizerEmail)
+                            sendRescheduleEmail(env.EMAIL, r.email, title, description ?? null, newPollUrl, organizerEmail)
                         )
                     );
 
@@ -213,6 +213,29 @@ export const lockPoll = defineAction({
         const pushUserIds = recipients.map(r => r.user_id).filter((id): id is number => id !== null);
         await sendPushToUsers(pushUserIds, `It's happening: ${poll.title}`, "A date has been confirmed.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
+        // When a rescheduled poll is confirmed, delete the original cancelled predecessor.
+        // It has served its purpose and no longer needs to appear on anyone's dashboard.
+        try {
+            const predecessor = await db
+                .prepare(`SELECT id FROM polls WHERE rescheduled_poll_token = ? AND cancelled_at IS NOT NULL`)
+                .bind(input.token)
+                .first<{ id: number }>();
+
+            if (predecessor) {
+                await db.batch([
+                    db.prepare(`DELETE FROM votes WHERE participant_id IN (SELECT id FROM participants WHERE poll_id = ?)`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM chosen_poll_options WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM invites WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM poll_dismissals WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM participants WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM poll_options WHERE poll_id = ?`).bind(predecessor.id),
+                    db.prepare(`DELETE FROM polls WHERE id = ?`).bind(predecessor.id),
+                ]);
+            }
+        } catch (e) {
+            console.error("Failed to delete predecessor poll after confirmation:", e);
+        }
+
         return { ok: true };
     },
 });
@@ -313,6 +336,122 @@ export const inviteParticipants = defineAction({
     },
 });
 
+export const bulkInvite = defineAction({
+    accept: "form",
+    input: z.object({
+        token: z.string().min(1),
+        emails: z.string().min(1, "Please enter at least one email address."),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to send invites." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        // Parse entries — newline separated; each line can be:
+        //   "Name <email>"  →  use provided name
+        //   "email"         →  derive name from email prefix
+        function deriveNameFromEmail(email: string): string {
+            return email.split("@")[0]!
+                .replace(/[._\-+]/g, " ")
+                .replace(/\b\w/g, c => c.toUpperCase())
+                .trim();
+        }
+
+        type Entry = { email: string; name: string };
+        const entries: Entry[] = [];
+        for (const line of input.emails.split(/\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const nameEmail = trimmed.match(/^(.+?)\s*<([^>]+)>\s*$/);
+            if (nameEmail) {
+                const email = nameEmail[2]!.trim().toLowerCase();
+                if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                    entries.push({ email, name: nameEmail[1]!.trim() });
+            } else {
+                // May be comma-separated plain emails on one line
+                for (const part of trimmed.split(/[,;]+/)) {
+                    const email = part.trim().toLowerCase();
+                    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                        entries.push({ email, name: deriveNameFromEmail(email) });
+                }
+            }
+        }
+
+        if (entries.length === 0) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "No valid email addresses found." });
+        }
+
+        const origin = new URL(context.request.url).origin;
+        const creatorName = context.locals.user?.name ?? userEmail;
+
+        let sent = 0;
+        let skipped = 0;
+
+        for (const { email, name } of entries) {
+            try {
+
+                let invitee = await db
+                    .prepare(`SELECT id, name FROM users WHERE email = ?`)
+                    .bind(email)
+                    .first<{ id: number; name: string | null }>();
+
+                if (!invitee) {
+                    invitee = await db
+                        .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id, name`)
+                        .bind(email, name)
+                        .first<{ id: number; name: string | null }>();
+                }
+
+                if (!invitee) continue;
+
+                // Skip if already a participant in this poll
+                const existing = await db
+                    .prepare(`SELECT id FROM participants WHERE poll_id = ? AND user_id = ?`)
+                    .bind(poll.id, invitee.id)
+                    .first<{ id: number }>();
+
+                if (existing) { skipped++; continue; }
+
+                const editToken = makeToken(8);
+                await db
+                    .prepare(`INSERT INTO participants (poll_id, name, edit_token, user_id, email) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, invitee.name ?? name, editToken, invitee.id, email)
+                    .run();
+
+                const inviteToken = makeToken(32);
+                const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                await db
+                    .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(poll.id, invitee.id, userId, inviteToken, expiresAt)
+                    .run();
+
+                const inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+                await sendPollInviteEmail(env.EMAIL, email, invitee.name ?? name, poll.title, poll.description, inviteUrl, creatorName, userEmail);
+                sent++;
+            } catch (e) {
+                console.error(`bulkInvite: failed for ${email}:`, e);
+                skipped++;
+            }
+        }
+
+        return { ok: true, sent, skipped };
+    },
+});
+
 export const cancelPoll = defineAction({
     accept: "form",
     input: z.object({ token: z.string() }),
@@ -327,9 +466,9 @@ export const cancelPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -359,7 +498,7 @@ export const cancelPoll = defineAction({
         console.log(`cancelPoll: sending cancellation emails to ${recipients.length} recipient(s)`);
         const sendResults = await Promise.allSettled(
             recipients.map((r) =>
-                sendCancellationEmail(env.EMAIL, r.email, poll.title, pollUrl, userEmail)
+                sendCancellationEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl, userEmail)
             )
         );
         sendResults.forEach((r, i) => {
@@ -388,9 +527,9 @@ export const uncancelPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -419,7 +558,7 @@ export const uncancelPoll = defineAction({
 
         console.log(`uncancelPoll: sending reopen emails to ${recipients.length} recipient(s)`);
         const reopenResults = await Promise.allSettled(
-            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl))
         );
         reopenResults.forEach((r, i) => {
             if (r.status === "rejected") {
@@ -447,9 +586,9 @@ export const unlockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string }>();
+            .first<{ id: number; title: string; description: string | null }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -478,7 +617,7 @@ export const unlockPoll = defineAction({
 
         console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const reopenResults = await Promise.allSettled(
-            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, pollUrl))
+            recipients.map((r) => sendReopenEmail(env.EMAIL, r.email, poll.title, poll.description, pollUrl))
         );
         reopenResults.forEach((r, i) => {
             if (r.status === "rejected") {
@@ -490,5 +629,312 @@ export const unlockPoll = defineAction({
         await sendPushToUsers(pushUserIds, `Reopened: ${poll.title}`, "The organiser re-opened voting.", pollUrl, env.DB, { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 
         return { ok: true };
+    },
+});
+
+export const remindNonResponders = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string() }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        const userEmail = context.locals.user?.email;
+        if (!userId || !userEmail) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "You must be logged in to send reminders." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description, duration_minutes, last_reminded_at FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null; duration_minutes: number; last_reminded_at: string | null }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const pollOptions = (
+            await db
+                .prepare(`SELECT option_datetime FROM poll_options WHERE poll_id = ? ORDER BY option_datetime ASC`)
+                .bind(poll.id)
+                .all<{ option_datetime: string }>()
+        ).results.map((r: { option_datetime: string }) => r.option_datetime);
+
+        const isAdmin = userEmail === "ernie.braganza@gmail.com";
+        if (!isAdmin && poll.last_reminded_at) {
+            const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
+            if (hoursElapsed < 24) {
+                const hoursLeft = Math.ceil(24 - hoursElapsed);
+                throw new ActionError({
+                    code: "TOO_MANY_REQUESTS",
+                    message: `Reminders were sent recently. You can send again in ${hoursLeft} hour${hoursLeft !== 1 ? "s" : ""}.`,
+                });
+            }
+        }
+
+        const nonResponders = (
+            await db
+                .prepare(`
+                    SELECT pa.id, pa.user_id, pa.edit_token,
+                           COALESCE(u.email, pa.email) AS email,
+                           COALESCE(pa.name, u.name, 'there') AS name
+                    FROM participants pa
+                    LEFT JOIN users u ON u.id = pa.user_id
+                    WHERE pa.poll_id = ?
+                      AND COALESCE(u.email, pa.email) IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = pa.id)
+                `)
+                .bind(poll.id)
+                .all<{ id: number; user_id: number | null; edit_token: string; email: string; name: string }>()
+        ).results;
+
+        if (nonResponders.length === 0) {
+            return { ok: true, sent: 0 };
+        }
+
+        const origin = new URL(context.request.url).origin;
+        const creatorName = context.locals.user?.name ?? userEmail;
+        let sent = 0;
+
+        for (const recipient of nonResponders) {
+            try {
+                let recipientUserId = recipient.user_id;
+
+                if (!recipientUserId && recipient.email) {
+                    let user = await db
+                        .prepare(`SELECT id FROM users WHERE email = ?`)
+                        .bind(recipient.email)
+                        .first<{ id: number }>();
+                    if (!user) {
+                        user = await db
+                            .prepare(`INSERT INTO users (email, name) VALUES (?, ?) RETURNING id`)
+                            .bind(recipient.email, recipient.name)
+                            .first<{ id: number }>();
+                    }
+                    if (user) {
+                        recipientUserId = user.id;
+                        await db
+                            .prepare(`UPDATE participants SET user_id = ? WHERE id = ?`)
+                            .bind(recipientUserId, recipient.id)
+                            .run();
+                    }
+                }
+
+                let inviteUrl: string;
+                if (recipientUserId) {
+                    const inviteToken = makeToken(32);
+                    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                    await db
+                        .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+                        .bind(poll.id, recipientUserId, userId, inviteToken, expiresAt)
+                        .run();
+                    inviteUrl = `${origin}/auth/invite?token=${inviteToken}`;
+                } else {
+                    inviteUrl = `${origin}/poll/${input.token}?invite=${recipient.edit_token}`;
+                }
+
+                await sendReminderEmail(env.EMAIL, recipient.email, recipient.name, poll.title, poll.description, pollOptions, poll.duration_minutes, inviteUrl, creatorName, userEmail);
+                sent++;
+            } catch (e) {
+                console.error(`remindNonResponders: failed for ${recipient.email}:`, e);
+            }
+        }
+
+        if (sent > 0) {
+            await db
+                .prepare(`UPDATE polls SET last_reminded_at = datetime('now') WHERE id = ?`)
+                .bind(poll.id)
+                .run();
+        }
+
+        return { ok: true, sent };
+    },
+});
+
+export const renewInvite = defineAction({
+    accept: "form",
+    input: z.object({
+        pollToken: z.string(),
+        participantId: z.coerce.number().int(),
+    }),
+
+    async handler(input, context) {
+        const userId = context.locals.user?.id;
+        if (!userId) {
+            throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+        }
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.pollToken, userId)
+            .first<{ id: number }>();
+
+        if (!poll) {
+            throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+        }
+
+        const participant = await db
+            .prepare(`SELECT user_id FROM participants WHERE id = ? AND poll_id = ?`)
+            .bind(input.participantId, poll.id)
+            .first<{ user_id: number | null }>();
+
+        if (!participant) {
+            throw new ActionError({ code: "NOT_FOUND", message: "Participant not found." });
+        }
+
+        if (!participant.user_id) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "This participant has no account — use the edit_token link instead." });
+        }
+
+        const newToken = makeToken(32);
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        await db
+            .prepare(`INSERT INTO invites (poll_id, invitee_user_id, invited_by_user_id, token, expires_at) VALUES (?, ?, ?, ?, ?)`)
+            .bind(poll.id, participant.user_id, userId, newToken, expiresAt)
+            .run();
+
+        const origin = new URL(context.request.url).origin;
+        return { ok: true, inviteUrl: `${origin}/auth/invite?token=${newToken}`, expiresAt };
+    },
+});
+
+export const deletePoll = defineAction({
+    accept: "form",
+    input: z.object({ token: z.string().min(1) }),
+
+    handler: async (input, context) => {
+        const userId = context.locals.user?.id;
+        if (!userId) throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number }>();
+
+        if (!poll) throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+
+        const participantCount = await db
+            .prepare(`SELECT COUNT(*) AS n FROM participants WHERE poll_id = ?`)
+            .bind(poll.id)
+            .first<{ n: number }>();
+
+        if ((participantCount?.n ?? 0) > 0) {
+            throw new ActionError({ code: "BAD_REQUEST", message: "Cannot delete a poll that already has participants." });
+        }
+
+        await db.batch([
+            db.prepare(`DELETE FROM poll_options WHERE poll_id = ?`).bind(poll.id),
+            db.prepare(`DELETE FROM polls WHERE id = ?`).bind(poll.id),
+        ]);
+
+        return { ok: true };
+    },
+});
+
+export const editPoll = defineAction({
+    accept: "form",
+    input: EditPollSchema,
+
+    handler: async (input, context) => {
+        const userId = context.locals.user?.id;
+        if (!userId) throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description, chosen_option_id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null; chosen_option_id: number | null }>();
+
+        if (!poll) throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+
+        await db
+            .prepare(`UPDATE polls SET title = ?, description = ?, duration_minutes = ? WHERE id = ?`)
+            .bind(input.title, input.description ?? null, input.duration, poll.id)
+            .run();
+
+        const isLocked = poll.chosen_option_id !== null;
+        if (isLocked || !input.options) {
+            return { ok: true, token: input.token };
+        }
+
+        const currentOptions: { id: number; option_datetime: string }[] = (
+            await db
+                .prepare(`SELECT id, option_datetime FROM poll_options WHERE poll_id = ?`)
+                .bind(poll.id)
+                .all<{ id: number; option_datetime: string }>()
+        ).results;
+
+        const currentById = new Map<number, string>(currentOptions.map(o => [o.id, o.option_datetime] as [number, string]));
+
+        const removedIds: number[] = [];
+        const insertDatetimes: string[] = [];
+
+        for (const submitted of input.options) {
+            if (submitted.id != null) {
+                const currentDatetime = currentById.get(submitted.id);
+                if (currentDatetime === undefined) continue;
+                if (currentDatetime !== submitted.datetime) {
+                    removedIds.push(submitted.id);
+                    insertDatetimes.push(submitted.datetime);
+                }
+                currentById.delete(submitted.id);
+            } else {
+                insertDatetimes.push(submitted.datetime);
+            }
+        }
+        for (const [id] of currentById) {
+            removedIds.push(id);
+        }
+
+        const optionsChanged = removedIds.length > 0 || insertDatetimes.length > 0;
+
+        if (optionsChanged) {
+            const batchOps = [];
+            if (removedIds.length > 0) {
+                const placeholders = removedIds.map(() => "?").join(", ");
+                batchOps.push(
+                    db.prepare(`DELETE FROM votes WHERE option_id IN (${placeholders})`).bind(...removedIds),
+                    db.prepare(`DELETE FROM poll_options WHERE id IN (${placeholders})`).bind(...removedIds),
+                );
+            }
+            for (const dt of insertDatetimes) {
+                batchOps.push(
+                    db.prepare(`INSERT INTO poll_options (poll_id, option_datetime) VALUES (?, ?)`).bind(poll.id, dt)
+                );
+            }
+            await db.batch(batchOps);
+
+            const recipients: { email: string }[] = (
+                await db
+                    .prepare(`
+                        SELECT COALESCE(u.email, pa.email) AS email
+                        FROM participants pa
+                        LEFT JOIN users u ON u.id = pa.user_id
+                        WHERE pa.poll_id = ?
+                          AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                    `)
+                    .bind(poll.id)
+                    .all<{ email: string }>()
+            ).results;
+
+            const origin = new URL(context.request.url).origin;
+            const pollUrl = `${origin}/poll/${input.token}`;
+            const organizerEmail = context.locals.user?.email ?? "hello@commontime.app";
+
+            await Promise.allSettled(
+                recipients.map(r =>
+                    sendPollEditedEmail(env.EMAIL, r.email, input.title, input.description ?? null, pollUrl, organizerEmail)
+                )
+            );
+        }
+
+        return { ok: true, token: input.token };
     },
 });

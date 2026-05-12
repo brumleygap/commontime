@@ -19,6 +19,8 @@ const unlockError = unlockResult?.error;
 const cancelResult = await Astro.getActionResult(actions.cancelPoll);
 const cancelError = cancelResult?.error;
 
+const deleteResult = await Astro.getActionResult(actions.deletePoll);
+if (deleteResult?.data?.ok) return Astro.redirect("/");
 
 const inviteResult = await Astro.getActionResult(actions.inviteParticipants);
 const inviteError = inviteResult?.error;
@@ -29,7 +31,7 @@ const welcomed = Astro.url.searchParams.get("welcomed") === "1";
 
 const poll = await db
   .prepare(
-    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at, rescheduled_poll_token
+    `SELECT id, token, title, description, timezone, creator_id, created_at, chosen_option_id, cancelled_at, rescheduled_poll_token, duration_minutes, last_reminded_at
      FROM polls WHERE token = ?`
   )
   .bind(token)
@@ -44,6 +46,8 @@ const poll = await db
     chosen_option_id: number | null;
     cancelled_at: string | null;
     rescheduled_poll_token: string | null;
+    duration_minutes: number;
+    last_reminded_at: string | null;
   }>();
 
 if (!poll) return new Response("Poll not found", { status: 404 });
@@ -168,6 +172,32 @@ const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.c
 const isCancelled = poll.cancelled_at !== null;
 const isOpen = poll.chosen_option_id === null && !isCancelled;
 
+// Non-responder count and reminder cooldown (creator only)
+let nonResponderCount = 0;
+let reminderCooldownHours: number | null = null;
+if (isCreator && isOpen) {
+  const nrRow = await db
+    .prepare(`
+      SELECT COUNT(*) AS n
+      FROM participants pa
+      LEFT JOIN users u ON u.id = pa.user_id
+      WHERE pa.poll_id = ?
+        AND COALESCE(u.email, pa.email) IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = pa.id)
+    `)
+    .bind(poll.id)
+    .first<{ n: number }>();
+  nonResponderCount = nrRow?.n ?? 0;
+
+  const isAdmin = currentUser?.email === "ernie.braganza@gmail.com";
+  if (!isAdmin && poll.last_reminded_at) {
+    const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
+    if (hoursElapsed < 24) {
+      reminderCooldownHours = Math.ceil(24 - hoursElapsed);
+    }
+  }
+}
+
 const chosenOptions = poll.chosen_option_id
   ? (await db
       .prepare(`
@@ -241,27 +271,31 @@ for (const opt of options) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtTime(dt: string) {
-  return new Date(dt).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+const fmtT = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
+function fmtTime(dt: string, durationMins: number) {
+  const start = new Date(dt);
+  const end = new Date(start.getTime() + durationMins * 60 * 1000);
+  return { start: fmtT(start), end: fmtT(end), full: `${fmtT(start)} – ${fmtT(end)}` };
 }
 
-function fmtColDate(dt: string) {
-  const d = new Date(dt);
+function fmtColDate(dt: string, durationMins: number) {
+  const start = new Date(dt);
+  const end = new Date(start.getTime() + durationMins * 60 * 1000);
   return {
-    date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-    time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+    date: start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+    timeStart: fmtT(start),
+    timeFull: `${fmtT(start)} – ${fmtT(end)}`,
   };
 }
 
-function fmtFull(dt: string) {
-  const d = new Date(dt);
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+function fmtFull(dt: string, durationMins: number) {
+  const start = new Date(dt);
+  const end = new Date(start.getTime() + durationMins * 60 * 1000);
+  const fmtT = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
     + " · "
-    + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    + `${fmtT(start)} – ${fmtT(end)}`;
 }
 
 // Cell background for a given availability value
@@ -290,12 +324,8 @@ function cellColor(av: number | undefined): string {
 <BaseLayout title={poll.title}>
   <!-- Poll header -->
   <div class="poll-header">
-    <div class="absolute right-0 top-0 overflow-hidden h-full w-32 pointer-events-none" aria-hidden="true">
-      <span class="ct-header-watermark">𝄴</span>
-    </div>
     <div class="mx-auto max-w-5xl px-4 py-6 relative z-10">
-      {currentUser && <a href="/" class="poll-back">← Scheduling Polls</a>}
-      <p class="poll-eyebrow">♩ Poll</p>
+      {currentUser && <a href="/" class="poll-back">All Polls</a>}
       <h1 class="poll-title">{poll.title}</h1>
       {poll.description && (
         <p class="poll-desc">{poll.description}</p>
@@ -303,7 +333,7 @@ function cellColor(av: number | undefined): string {
     </div>
   </div>
 
-  <div class="mx-auto max-w-5xl px-4 py-8 space-y-10">
+  <div class="mx-auto max-w-5xl px-4 py-8 space-y-10" style={isCreator && isOpen ? "padding-bottom:100px" : ""}>
 
 
     <!-- ── Cancelled banner / finalized banner / vote form ─────────────── -->
@@ -320,7 +350,7 @@ function cellColor(av: number | undefined): string {
           )}
           {isCreator && !poll.rescheduled_poll_token && (
             <div class="reopen-section" style="border-top-color:rgba(200,16,46,0.2)">
-              <a href={`/create?from=${token}`} class="try-new-dates-btn-detail">♩ Try New Dates</a>
+              <a href={`/create?from=${token}`} class="try-new-dates-btn-detail">· Try New Dates</a>
             </div>
           )}
         </div>
@@ -331,7 +361,7 @@ function cellColor(av: number | undefined): string {
         <div style="flex:1">
           <p class="finalized-eyebrow">{chosenOptions.length > 1 ? `${chosenOptions.length} dates confirmed` : "Date confirmed"}</p>
           {chosenOptions.map((opt) => (
-            <p class="finalized-date">{fmtFull(opt.option_datetime)}</p>
+            <p class="finalized-date">{fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</p>
           ))}
           <p class="finalized-sub">This poll is closed. Thanks to everyone who responded.</p>
           <a href={`/poll/${poll.token}/calendar.ics`} class="finalized-cal-link">{chosenOptions.length > 1 ? "Add all to calendar →" : "Add to calendar →"}</a>
@@ -346,6 +376,7 @@ function cellColor(av: number | undefined): string {
                 <input type="hidden" name="token" value={token} />
                 <button type="submit" class="reopen-btn">Re-open for voting</button>
               </form>
+              <a href={`/poll/${poll.token}/edit`} class="edit-details-link">Edit title or description →</a>
             </div>
           )}
         </div>
@@ -355,14 +386,17 @@ function cellColor(av: number | undefined): string {
         <div class="vote-card-head">
           <h2 class="vote-card-title">Your availability</h2>
           <p class="vote-card-sub">
-            {myParticipantId ? "Update your response below." : "Mark each time as yes, maybe, or busy."}
+            {myParticipantId ? "Update your response below." : "Mark each time as yes, if needed, or no."}
           </p>
         </div>
 
         {voteSuccess && (
-          <div class="success-banner">
-            <strong>Response saved!</strong>
-            <span>Scroll down to see the updated availability.</span>
+          <div class="success-banner auto-banner">
+            <div class="banner-body">
+              <strong>Response saved!</strong>
+              <span>Scroll down to see the updated availability.</span>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
@@ -374,17 +408,23 @@ function cellColor(av: number | undefined): string {
         )}
 
         {welcomed && currentUser && (
-          <div class="welcomed-banner">
-            <strong>Welcome to CommonTime!</strong>
-            <span>You've been invited to this poll. Mark your availability below.</span>
-            <a href="/login" class="welcomed-passkey-link">Add a passkey for easy sign-in next time →</a>
+          <div class="welcomed-banner auto-banner">
+            <div class="banner-body">
+              <strong>Welcome to CommonTime!</strong>
+              <span>You've been invited to this poll. Mark your availability below.</span>
+              <a href="/login" class="welcomed-passkey-link">Add a passkey for easy sign-in next time →</a>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
         {!welcomed && myParticipantId && (
-          <div class="welcome-banner">
-            <strong>Welcome back{currentUser?.name ? `, ${currentUser.name}` : currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
-            <span>Your previous selections are loaded. Update any time.</span>
+          <div class="welcome-banner auto-banner">
+            <div class="banner-body">
+              <strong>Welcome back{currentUser?.name ? `, ${currentUser.name}` : currentUser?.email ? `, ${currentUser.email.split("@")[0]}` : ""}!</strong>
+              <span>Your previous selections are loaded. Update any time.</span>
+            </div>
+            <button type="button" class="banner-close" aria-label="Dismiss">×</button>
           </div>
         )}
 
@@ -429,22 +469,6 @@ function cellColor(av: number | undefined): string {
             />
           </div>
 
-          <!-- Vibe legend -->
-          <div class="vibe-legend">
-            <div class="vibe-legend-item" style="background:var(--yes-bg)">
-              <span style="color:var(--yes);font-weight:700;">✓</span>
-              <span class="vibe-legend-label" style="color:var(--yes)">Yes</span>
-            </div>
-            <div class="vibe-legend-item" style="background:var(--maybe-bg)">
-              <span style="color:var(--maybe);font-weight:700;">~</span>
-              <span class="vibe-legend-label" style="color:var(--maybe)">Maybe</span>
-            </div>
-            <div class="vibe-legend-item" style="background:var(--busy-bg)">
-              <span style="color:var(--red);font-weight:700;">✕</span>
-              <span class="vibe-legend-label" style="color:var(--red)">Busy</span>
-            </div>
-          </div>
-
           <!-- Day groups -->
           {dayGroups.map((group) => (
             <div class="day-group">
@@ -462,11 +486,15 @@ function cellColor(av: number | undefined): string {
                     data-init={existing ?? -1}
                   >
                     <div class="time-bullet" data-bullet></div>
-                    <div class="time-label">{fmtTime(opt.option_datetime)}</div>
-                    <div class="vibe-btns">
-                      <button type="button" class="vibe-btn" data-vibe="1" title="Yes">✓</button>
-                      <button type="button" class="vibe-btn" data-vibe="2" title="Maybe">~</button>
-                      <button type="button" class="vibe-btn" data-vibe="0" title="Busy">✕</button>
+                    {(() => { const t = fmtTime(opt.option_datetime, poll.duration_minutes ?? 60); return (
+                    <div class="time-label" data-full={t.full}>
+                      {t.start}<span class="time-end-suffix"> – {t.end}</span>
+                    </div>
+                    ); })()}
+                    <div class="vibe-pill">
+                      <button type="button" class="vibe-seg" data-vibe="1">Yes</button>
+                      <button type="button" class="vibe-seg" data-vibe="2">If needed</button>
+                      <button type="button" class="vibe-seg" data-vibe="0">No</button>
                     </div>
                   </div>
                 );
@@ -486,32 +514,36 @@ function cellColor(av: number | undefined): string {
     <!-- ── Availability grid ──────────────────────────────────────────────── -->
     <div class="avail-section">
       <h2 class="avail-title">
-        <img src="/commontime-logo.png" alt="" aria-hidden="true" style="width:20px;height:auto;margin-right:8px;vertical-align:middle;opacity:0.85;" />
+        <img src="/commontime-logo.svg" alt="" aria-hidden="true" style="width:20px;height:auto;margin-right:8px;vertical-align:middle;opacity:0.85;" />
         Availability
       </h2>
 
       {participants.length === 0 ? (
         <p class="avail-empty">No responses yet. Be the first!</p>
       ) : (
-        <div class="avail-table-wrap">
+        <div class="avail-table-outer">
+          <div class="avail-table-wrap">
           <table class="avail-table">
             <thead>
               <tr>
                 <th class="avail-name-hdr">Who</th>
                 {optionStats.map((opt) => {
-                  const { date, time } = fmtColDate(opt.option_datetime);
+                  const { date, timeStart, timeFull } = fmtColDate(opt.option_datetime, poll.duration_minutes ?? 60);
                   const isChosen = chosenOptionIds.has(opt.id);
                   const isWinner = isOpen && !isChosen && opt.score === maxScore && opt.score > 0;
                   return (
                     <th
                       class={`avail-opt-hdr${isChosen ? " chosen" : isWinner ? " winner" : ""}`}
                       title={[...opt.yesNames.map(n => `✓ ${n}`), ...opt.maybeNames.map(n => `~ ${n}`)].join("\n") || "No responses yet"}
+                      data-full={`${date} · ${timeFull}`}
                     >
                       <span class="avail-hdr-date">{date}</span>
-                      <span class="avail-hdr-time">{time}</span>
+                      <span class="avail-hdr-time" data-full={timeFull}>
+                        {timeStart}<span class="time-end-suffix"> – {timeFull.split(" – ")[1]}</span>
+                      </span>
                       <span class={`avail-hdr-count${isChosen ? " confirmed" : isWinner ? " hot" : ""}`}>
                         {opt.yesCount}/{respondedIds.size}
-                        {isChosen ? " ★" : isWinner ? " ★" : ""}
+                        {isChosen ? " ★" : ""}
                       </span>
                     </th>
                   );
@@ -542,6 +574,8 @@ function cellColor(av: number | undefined): string {
               })}
             </tbody>
           </table>
+          </div>
+          <button class="scroll-hint" aria-label="Scroll right">»</button>
         </div>
       )}
 
@@ -549,83 +583,83 @@ function cellColor(av: number | undefined): string {
       {participants.length > 0 && (
         <div class="grid-legend">
           <span><strong style="color:var(--yes)">✓</strong> Yes</span>
-          <span><strong style="color:var(--maybe)">~</strong> Maybe</span>
-          <span><strong style="color:var(--red)">✕</strong> Busy</span>
-          <span style="opacity:.55"><strong>—</strong> Pending</span>
+          <span><strong style="color:var(--maybe)">~</strong> If needed</span>
+          <span><strong style="color:var(--red)">✕</strong> No</span>
+          <span style="opacity:.55"><strong>—</strong> No response</span>
         </div>
       )}
     </div>
 
-    <!-- ── Invite section (creator only, while open) ────────────────────── -->
-    {isCreator && isOpen && (
-      <div class="invite-card">
-        <div class="invite-card-head">
-          <h2 class="invite-title">Invite someone</h2>
-          <p class="invite-sub">Generate a personal link to share by any channel. Add their email to also send it directly to their inbox.</p>
-        </div>
+  </div>
 
-        <form method="POST" action={actions.inviteParticipants} class="invite-form" id="invite-form" data-poll-token={token}>
-          <input type="hidden" name="token" value={token} />
+  <!-- ── Organizer bottom bar + drawers (creator only, while open) ─────────── -->
+{isCreator && isOpen && (
+  <>
+    <!-- Overlay -->
+    <div class="org-overlay" id="org-overlay"></div>
+
+    <!-- Invite drawer -->
+    <div class="org-drawer" id="drawer-invite">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Invite people</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        <p class="org-drawer-sub">One entry per line. Include a name or just the email address.</p>
+        <form id="bulk-invite-form" data-poll-token={token}>
           <div class="invite-field">
-            <label for="invite-name" class="field-label">Their name <span class="required-star">*</span></label>
-            <input
-              id="invite-name"
-              name="name"
-              type="text"
+            <div class="invite-label-row">
+              <label for="bulk-emails" class="field-label">People to invite</label>
+              <div class="invite-info-wrap">
+                <button type="button" class="invite-info-btn" aria-label="Format help" id="invite-info-btn"><em>i</em></button>
+                <div class="invite-info-popup" id="invite-info-popup" hidden>
+                  <p class="invite-info-heading">Accepted formats</p>
+                  <ul class="invite-info-list">
+                    <li><code>Alice Smith &lt;alice@example.com&gt;</code></li>
+                    <li><code>alice@example.com</code></li>
+                  </ul>
+                  <p class="invite-info-note">One entry per line. Comma-separated emails also work. Names are optional — if omitted they're derived from the email address.</p>
+                </div>
+              </div>
+            </div>
+            <textarea
+              id="bulk-emails"
+              name="emails"
+              class="bulk-emails-input"
+              rows="6"
+              placeholder="Alice Smith <alice@example.com>&#10;Bob Jones <bob@org.com>&#10;carol@company.com"
               autocomplete="off"
-              placeholder="e.g. Alice"
-              class="invite-input"
-              required
-            />
+              spellcheck="false"
+            ></textarea>
           </div>
-          <div class="invite-field">
-            <label for="invite-email" class="field-label">Their email <span class="invite-optional">(optional — to also send by email)</span></label>
-            <input
-              id="invite-email"
-              name="email"
-              type="email"
-              autocomplete="off"
-              placeholder="alice@example.com"
-              class="invite-input"
-            />
+          <div id="bulk-invite-result" class="bulk-invite-result" style="display:none"></div>
+          <div id="bulk-invite-error" class="error-banner-inline" style="display:none">
+            <strong>Couldn't send invites.</strong>
+            <span id="bulk-invite-error-msg"></span>
           </div>
-
-          <div id="invite-link-result" class="invite-link-result" style="display:none">
-            <p class="invite-link-label">Personal link — share via text, DM, or email:</p>
-            <a id="invite-link-value" class="invite-link-anchor" href="#" target="_blank" rel="noopener"></a>
-            <p id="invite-link-note" class="invite-link-note"></p>
-          </div>
-
-          <div id="invite-error-result" class="error-banner-inline" style="display:none">
-            <strong>Couldn't create invite.</strong>
-            <span id="invite-error-msg"></span>
-          </div>
-
           <div class="invite-submit-row">
-            <button type="submit" class="invite-btn" id="invite-btn">♩ Get link</button>
+            <button type="submit" class="invite-btn" id="bulk-invite-btn">Send invites</button>
           </div>
         </form>
       </div>
-    )}
+    </div>
 
-    <!-- ── Finalize section (creator only, while open) ───────────────────── -->
-    {isCreator && isOpen && (
-      <div class="finalize-card">
-        <div class="finalize-card-head">
-          <h2 class="finalize-title">Confirm Dates</h2>
-          <p class="finalize-sub">Choose one or more dates to confirm and close this poll.</p>
-        </div>
-
+    <!-- Confirm drawer -->
+    <div class="org-drawer" id="drawer-confirm">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Confirm Dates</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        <p class="org-drawer-sub">Choose one or more dates to confirm and close this poll.</p>
         {lockError && (
           <div class="error-banner-inline">
             <strong>Couldn't confirm date.</strong>
             {lockError.message && <span>{lockError.message}</span>}
           </div>
         )}
-
         <form method="POST" action={actions.lockPoll} class="finalize-form">
           <input type="hidden" name="token" value={token} />
-
           <div class="finalize-options">
             {optionStats.map((opt) => {
               const isTop = opt.score === maxScore && opt.score > 0;
@@ -633,7 +667,7 @@ function cellColor(av: number | undefined): string {
                 <label class={`finalize-option${isTop ? " top" : ""}`}>
                   <input type="checkbox" name="optionIds" value={opt.id} />
                   <span class="finalize-option-inner">
-                    <span class="finalize-option-date">{fmtFull(opt.option_datetime)}</span>
+                    <span class="finalize-option-date">{fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</span>
                     <span class="finalize-option-votes">
                       <span style="color:var(--yes)">{opt.yesCount} yes</span>
                       {opt.maybeCount > 0 && <span style="color:var(--maybe)">{opt.maybeCount} maybe</span>}
@@ -644,10 +678,9 @@ function cellColor(av: number | undefined): string {
               );
             })}
           </div>
-
           <div class="finalize-submit-row">
             <div class="finalize-submit-actions">
-              <a href={`/create?from=${token}`} class="try-new-dates-link">♩ Try New Dates</a>
+              <a href={`/create?from=${token}`} class="try-new-dates-link">· Try New Dates</a>
               <div class="finalize-confirm-group">
                 {respondedIds.size === 0 && (
                   <p class="finalize-waiting">Waiting for responses before confirming.</p>
@@ -661,36 +694,101 @@ function cellColor(av: number | undefined): string {
           </div>
         </form>
       </div>
-    )}
+    </div>
 
-    <!-- ── Cancel section (creator only, while open) ────────────────────── -->
-    {isCreator && isOpen && (
-      <div class="cancel-section">
-        {cancelError && (
-          <p class="cancel-error">{cancelError.message}</p>
+    <!-- Remind drawer -->
+    <div class="org-drawer" id="drawer-remind">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Remind non-responders</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        <div id="remind-result" class="remind-success" style="display:none"></div>
+        <div id="remind-error" class="error-banner-inline" style="display:none">
+          <strong>Couldn't send reminders.</strong>
+          <span id="remind-error-msg"></span>
+        </div>
+        {nonResponderCount === 0 ? (
+          <p class="org-drawer-sub">Everyone has responded — no one to remind.</p>
+        ) : (
+          <>
+            <p class="org-drawer-sub">
+              {nonResponderCount} {nonResponderCount === 1 ? "person hasn't" : "people haven't"} responded yet.
+              They'll receive an email with a direct link to this poll.
+            </p>
+            {reminderCooldownHours !== null ? (
+              <p class="remind-cooldown">
+                Reminders were sent recently. You can send again in {reminderCooldownHours} hour{reminderCooldownHours !== 1 ? "s" : ""}.
+              </p>
+            ) : (
+              <button type="button" class="invite-btn" id="remind-send-btn" data-poll-token={token}>
+                Send reminders
+              </button>
+            )}
+          </>
         )}
+      </div>
+    </div>
+
+    <!-- Cancel drawer -->
+    <div class="org-drawer" id="drawer-cancel">
+      <div class="org-drawer-header">
+        <span class="org-drawer-title">Cancel poll</span>
+        <button class="org-drawer-close" aria-label="Close">×</button>
+      </div>
+      <div class="org-drawer-body">
+        {cancelError && <p class="cancel-error">{cancelError.message}</p>}
         <p class="cancel-warning">Cancelling will notify all participants that the meeting is off. You can still try new dates after cancelling.</p>
         <form method="POST" action={actions.cancelPoll}>
           <input type="hidden" name="token" value={token} />
-          <button
-            type="submit"
-            class="cancel-btn"
-            onclick="return confirm('Cancel this poll and notify all participants?\n\nYou can still try new dates after cancelling.')"
-          >
+          <button type="submit" class="cancel-btn" onclick="return confirm('Cancel this poll and notify all participants?\n\nYou can still try new dates after cancelling.')">
             Cancel this poll
           </button>
         </form>
+        {participants.length === 0 && (
+          <form method="POST" action={actions.deletePoll} style="margin-top:12px;">
+            <input type="hidden" name="token" value={token} />
+            <button type="submit" class="delete-btn" onclick="return confirm('Permanently delete this poll? This cannot be undone.')">
+              Delete poll
+            </button>
+          </form>
+        )}
       </div>
-    )}
+    </div>
 
-  </div>
+    <!-- Fixed bottom bar -->
+    <div class="org-bar">
+      <button class="org-bar-btn" data-drawer="invite">Invite</button>
+      <div class="org-bar-more-wrap">
+        <button class="org-bar-btn" id="org-bar-more" aria-haspopup="true" aria-expanded="false">···</button>
+        <div class="org-more-menu" id="org-more-menu" hidden>
+          <button class="org-more-item" data-drawer="remind">
+            Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
+          </button>
+          <a href={`/poll/${poll.token}/edit`} class="org-more-item">Edit poll</a>
+          <a href={`/poll/${token}/manage`} class="org-more-item">Links</a>
+          <div class="org-more-divider"></div>
+          <button class="org-more-item org-more-item--danger" data-drawer="cancel">Cancel poll</button>
+        </div>
+      </div>
+      <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">★ Confirm</button>
+    </div>
+  </>
+)}
+
+<!-- Time detail popup (mobile only) -->
+<div id="time-popup" class="time-popup" hidden>
+  <p id="time-popup-text" class="time-popup-text"></p>
+  <button id="time-popup-close" class="time-popup-close">Done</button>
+</div>
+<div id="time-popup-overlay" class="time-popup-overlay" hidden></div>
 </BaseLayout>
 
 <style>
   /* ── Poll header ────────────────────────────────────────────────────── */
   .poll-header {
     background: var(--ink);
-    border-bottom: 3px solid var(--red);
+    border-bottom: 3px solid rgba(245,242,236,0.15);
     position: relative;
     overflow: hidden;
   }
@@ -709,24 +807,35 @@ function cellColor(av: number | undefined): string {
   }
 
   .poll-back {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    font-size: 12px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.7);
     text-decoration: none;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     transition: color 0.15s;
   }
+  .poll-back::before {
+    content: '←';
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: 0;
+    color: rgba(255,255,255,0.5);
+    transition: color 0.15s, transform 0.15s;
+  }
   .poll-back:hover { color: #fff; }
+  .poll-back:hover::before { color: #fff; transform: translateX(-2px); }
 
   .poll-eyebrow {
     font-family: 'DM Mono', monospace;
     font-size: 13px;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: var(--red);
+    color: var(--on-dark);
     margin-bottom: 8px;
   }
 
@@ -775,12 +884,44 @@ function cellColor(av: number | undefined): string {
   }
 
   /* Banners */
+  .auto-banner {
+    transition: opacity 0.4s, max-height 0.4s;
+    overflow: hidden;
+  }
+  .auto-banner.dismissing {
+    opacity: 0;
+    max-height: 0 !important;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .banner-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .banner-close {
+    align-self: flex-start;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.5;
+    padding: 0 0 0 12px;
+  }
+  .banner-close:hover { opacity: 1; }
+
   .success-banner {
     padding: 14px 20px;
     background: var(--green-light);
     border-left: 3px solid var(--green);
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
     gap: 4px;
   }
 
@@ -814,7 +955,7 @@ function cellColor(av: number | undefined): string {
     background: var(--maybe-bg);
     border-left: 3px solid var(--maybe);
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
     gap: 4px;
   }
 
@@ -879,33 +1020,6 @@ function cellColor(av: number | undefined): string {
     border-color: var(--red);
   }
 
-  /* Vibe legend */
-  .vibe-legend {
-    display: flex;
-    border-bottom: 1px solid var(--staff);
-  }
-
-  .vibe-legend-item {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 0;
-    border-right: 1px solid var(--staff);
-    font-size: 16px;
-  }
-
-  .vibe-legend-item:last-child {
-    border-right: none;
-  }
-
-  .vibe-legend-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
   /* Day groups */
   .day-group {
     border-bottom: 1px solid var(--staff);
@@ -913,7 +1027,7 @@ function cellColor(av: number | undefined): string {
 
   .day-header {
     padding: 8px 16px;
-    background: var(--day-bg);
+    background: var(--staff);
     border-bottom: 1px solid var(--staff);
     display: flex;
     align-items: baseline;
@@ -962,46 +1076,101 @@ function cellColor(av: number | undefined): string {
     min-width: 0;
   }
 
-  .vibe-btns {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
+  /* ── Mobile time abbreviation + popup ──────────────────────────────────── */
+  @media (max-width: 767px) {
+    .time-end-suffix { display: none; }
+
+    .time-label[data-full] { cursor: pointer; text-decoration: underline dotted var(--staff); }
+    .avail-hdr-time[data-full] { cursor: pointer; }
   }
 
-  .vibe-btn {
-    width: 44px;
-    height: 44px;
+  .time-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(15,15,14,0.4);
+  }
+
+  .time-popup {
+    position: fixed;
+    bottom: 50%;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    z-index: 201;
+    background: var(--cream);
+    border: 2px solid var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    padding: 24px 28px;
+    width: min(90vw, 340px);
+    text-align: center;
+  }
+
+  .time-popup-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 16px;
+    line-height: 1.4;
+  }
+
+  .time-popup-close {
     font-family: 'DM Mono', monospace;
-    font-size: 16px;
-    border: 1px solid var(--btn-border);
-    background: transparent;
-    color: var(--btn-inactive);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--cream);
+    border: none;
+    padding: 10px 28px;
     cursor: pointer;
+    min-height: 44px;
+  }
+
+  .vibe-pill {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-shrink: 0;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .vibe-seg {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    border: none;
+    border-right: 1.5px solid var(--ink);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
     transition: all 0.1s;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    white-space: nowrap;
   }
 
-  .vibe-btn[data-vibe="1"].active {
+  .vibe-seg:last-child {
+    border-right: none;
+  }
+
+  .vibe-seg[data-vibe="1"].active {
     background: var(--yes-bg);
-    border-color: var(--yes);
     color: var(--yes);
     font-weight: 700;
   }
 
-  .vibe-btn[data-vibe="2"].active {
+  .vibe-seg[data-vibe="2"].active {
     background: var(--maybe-bg);
-    border-color: var(--maybe);
-    color: var(--maybe);
+    color: var(--maybe-text);
     font-weight: 700;
   }
 
-  .vibe-btn[data-vibe="0"].active {
+  .vibe-seg[data-vibe="0"].active {
     background: var(--busy-bg);
-    border-color: var(--red);
     color: var(--red);
     font-weight: 700;
   }
@@ -1036,11 +1205,54 @@ function cellColor(av: number | undefined): string {
     margin-top: 16px;
   }
 
+  .avail-table-outer {
+    position: relative;
+  }
+
   .avail-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     border: 1px solid var(--staff);
     border-top: none;
+  }
+
+  @keyframes scroll-hint {
+    0%, 100% { transform: translateX(0);   opacity: 1; }
+    50%       { transform: translateX(5px); opacity: 0.5; }
+  }
+
+  .scroll-hint {
+    display: none;
+  }
+
+  @media (max-width: 767px) {
+    .scroll-hint {
+      display: flex;
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 56px;
+      background: linear-gradient(to right, transparent, var(--cream) 60%);
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 10px;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--ink);
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.25s;
+      animation: scroll-hint 1.4s ease-in-out infinite;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .avail-table-outer.scroll-end .scroll-hint {
+      opacity: 0;
+      pointer-events: none;
+      animation: none;
+    }
   }
 
   .avail-table {
@@ -1050,8 +1262,8 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-name-hdr {
-    background: var(--ink);
-    color: var(--on-dark-dim);
+    background: var(--staff);
+    color: var(--muted);
     font-family: 'DM Mono', monospace;
     font-size: 12px;
     letter-spacing: 0.1em;
@@ -1060,13 +1272,15 @@ function cellColor(av: number | undefined): string {
     text-align: left;
     font-weight: 400;
     min-width: 130px;
-    border-right: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid var(--staff);
+    border-bottom: 2px solid var(--ink);
     vertical-align: middle;
   }
 
   .avail-opt-hdr {
-    background: var(--ink);
-    border-left: 1px solid rgba(255,255,255,0.06);
+    background: var(--staff);
+    border-left: 1px solid var(--staff);
+    border-bottom: 2px solid var(--ink);
     border-top: 3px solid transparent;
     padding: 12px 12px 10px;
     text-align: center;
@@ -1076,14 +1290,14 @@ function cellColor(av: number | undefined): string {
   }
 
   .avail-opt-hdr.winner {
-    border-top-color: var(--winner);
+    border-top-color: var(--green);
   }
 
   .avail-hdr-date {
     font-family: 'Playfair Display', serif;
     font-size: 13px;
     font-weight: 700;
-    color: var(--white);
+    color: var(--ink);
     display: block;
     line-height: 1.3;
   }
@@ -1091,7 +1305,7 @@ function cellColor(av: number | undefined): string {
   .avail-hdr-time {
     font-family: 'DM Mono', monospace;
     font-size: 12px;
-    color: var(--on-dark-dim);
+    color: var(--muted);
     display: block;
     margin-top: 3px;
   }
@@ -1099,14 +1313,14 @@ function cellColor(av: number | undefined): string {
   .avail-hdr-count {
     font-family: 'DM Mono', monospace;
     font-size: 13px;
-    color: var(--on-dark-dim);
+    color: var(--muted);
     display: block;
     margin-top: 4px;
     font-weight: 700;
   }
 
   .avail-hdr-count.hot {
-    color: var(--winner);
+    color: var(--green);
   }
 
   .avail-name-cell {
@@ -1159,11 +1373,12 @@ function cellColor(av: number | undefined): string {
 
   /* ── Chosen column highlight ────────────────────────────────────────── */
   .avail-opt-hdr.chosen {
-    border-top-color: var(--red);
+    border-top-color: var(--green);
+    background: var(--green-light);
   }
 
   .avail-hdr-count.confirmed {
-    color: var(--red);
+    color: var(--green);
   }
 
   /* ── Cancelled banner ──────────────────────────────────────────────── */
@@ -1271,6 +1486,40 @@ function cellColor(av: number | undefined): string {
     color: white;
   }
 
+  .remind-success {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--green);
+    margin-bottom: 12px;
+  }
+
+  .remind-cooldown {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 12px;
+  }
+
+  .delete-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--staff);
+    padding: 6px 14px;
+    min-height: 32px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+
+  .delete-btn:hover {
+    border-color: var(--muted);
+    color: var(--ink);
+  }
+
   /* ── Finalized banner ───────────────────────────────────────────────── */
   .finalized-banner {
     background: var(--green-light);
@@ -1354,6 +1603,17 @@ function cellColor(av: number | undefined): string {
     color: var(--ink);
   }
 
+  .edit-details-link {
+    display: inline-block;
+    margin-top: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
   .finalized-cal-link {
     display: inline-block;
     margin-top: 12px;
@@ -1414,7 +1674,7 @@ function cellColor(av: number | undefined): string {
   }
 
   .finalize-option:hover {
-    background: var(--day-bg);
+    background: var(--staff);
   }
 
   .finalize-option.top {
@@ -1566,6 +1826,127 @@ function cellColor(av: number | undefined): string {
 
   .invite-input:focus {
     border-color: var(--red);
+  }
+
+  .invite-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .invite-label-row .field-label {
+    margin-bottom: 0;
+  }
+
+  .invite-info-wrap {
+    position: relative;
+  }
+
+  .invite-info-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: 'Libre Baskerville', serif;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .invite-info-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .invite-info-popup {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    z-index: 50;
+    width: 280px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 14px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+  }
+
+  .invite-info-heading {
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 10px;
+    color: var(--on-dark-dim);
+    margin-bottom: 8px;
+  }
+
+  .invite-info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .invite-info-list code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cream);
+    word-break: break-all;
+  }
+
+  .invite-info-note {
+    font-size: 11px;
+    color: var(--on-dark-dim);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
+  .bulk-emails-input {
+    width: 100%;
+    border: 1px solid var(--staff);
+    border-left: 3px solid var(--ink);
+    background: var(--white);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--ink);
+    padding: 12px 14px;
+    outline: none;
+    resize: vertical;
+    line-height: 1.7;
+  }
+
+  .bulk-emails-input::placeholder {
+    color: var(--placeholder);
+    font-style: italic;
+  }
+
+  .bulk-emails-input:focus {
+    border-color: var(--ink);
+    border-left-color: var(--red);
+  }
+
+  .bulk-invite-result {
+    padding: 12px 14px;
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 15px;
+    color: var(--green);
+    margin-bottom: 12px;
   }
 
   .welcomed-banner {
@@ -1728,49 +2109,412 @@ function cellColor(av: number | undefined): string {
       font-size: 18px;
     }
   }
+
+  /* ── Organizer bottom bar ───────────────────────────────────────────────── */
+  .org-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    display: flex;
+    background: var(--ink);
+    border-top: 2px solid rgba(245,242,236,0.15);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .org-bar-btn {
+    flex: 1;
+    padding: 14px 8px;
+    background: none;
+    border: none;
+    border-right: 1px solid rgba(245,242,236,0.12);
+    color: var(--on-dark);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    min-height: 48px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .org-bar-btn:last-child { border-right: none; }
+  .org-bar-btn:hover { background: rgba(245,242,236,0.08); }
+
+  .org-bar-btn--primary { color: var(--cream); font-weight: 700; }
+  .org-bar-btn--danger  { color: var(--on-dark); }
+
+  /* ── More menu ──────────────────────────────────────────────────────────── */
+  .org-bar-more-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    border-right: 1px solid rgba(245,242,236,0.12);
+  }
+  .org-bar-more-wrap > .org-bar-btn {
+    flex: 1;
+    border-right: none;
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .org-more-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    min-width: 190px;
+    background: var(--ink);
+    border: 1px solid rgba(245,242,236,0.2);
+    border-radius: 6px;
+    z-index: 91;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+
+  .org-more-item {
+    display: block;
+    width: 100%;
+    padding: 13px 18px;
+    background: none;
+    border: none;
+    color: rgba(245,242,236,0.9);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .org-more-item:hover { background: rgba(245,242,236,0.08); }
+  .org-more-item--danger { color: #ff8080; }
+
+  .org-more-divider {
+    height: 1px;
+    background: rgba(245,242,236,0.15);
+    margin: 2px 0;
+  }
+
+  /* Desktop: constrain the bar to the content width so it doesn't
+     span the full 1150px — feels more like a contained toolbar */
+  @media (min-width: 768px) {
+    .org-bar {
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(100%, 960px);
+      border-radius: 6px 6px 0 0;
+      border-left: 2px solid rgba(245,242,236,0.15);
+      border-right: 2px solid rgba(245,242,236,0.15);
+    }
+  }
+
+  /* ── Organizer drawers ──────────────────────────────────────────────────── */
+  .org-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,15,14,0.5);
+    z-index: 100;
+  }
+
+  .org-overlay.open { display: block; }
+
+  /* Mobile: bottom sheet */
+  .org-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 110;
+    background: var(--cream);
+    border-top: 2px solid var(--ink);
+    border-radius: 12px 12px 0 0;
+    max-height: 80vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .org-drawer.open { transform: translateY(0); }
+
+  /* Desktop: centered modal */
+  @media (min-width: 768px) {
+    .org-drawer {
+      bottom: auto;
+      left: 50%;
+      top: 50%;
+      right: auto;
+      width: min(90vw, 560px);
+      max-height: 85vh;
+      border-radius: 6px;
+      border-top: none;
+      border: 2px solid var(--ink);
+      box-shadow: 6px 6px 0 var(--ink);
+      transform: translate(-50%, -48%) scale(0.97);
+      opacity: 0;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+      padding-bottom: 0;
+      pointer-events: none;
+    }
+
+    .org-drawer.open {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  .org-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--staff);
+    position: sticky;
+    top: 0;
+    background: var(--cream);
+    z-index: 1;
+  }
+
+  .org-drawer-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .org-drawer-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .org-drawer-body {
+    padding: 20px;
+  }
+
+  .org-drawer-sub {
+    font-family: 'Libre Baskerville', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
 </style>
 
 <script>
   import { actions } from "astro:actions";
 
+  // ── Organizer bottom drawer ──────────────────────────────────────────────
+  const overlay = document.getElementById("org-overlay");
+
+  function openDrawer(id: string) {
+    closeAllDrawers();
+    document.getElementById(`drawer-${id}`)?.classList.add("open");
+    overlay?.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeAllDrawers() {
+    document.querySelectorAll(".org-drawer.open").forEach(d => d.classList.remove("open"));
+    overlay?.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  // Bar buttons open drawers
+  document.querySelectorAll<HTMLButtonElement>(".org-bar-btn[data-drawer]").forEach(btn => {
+    btn.addEventListener("click", () => openDrawer(btn.dataset.drawer!));
+  });
+
+  // Close buttons and overlay close all drawers
+  document.querySelectorAll(".org-drawer-close").forEach(btn => {
+    btn.addEventListener("click", closeAllDrawers);
+  });
+  overlay?.addEventListener("click", closeAllDrawers);
+
+  // ── More popup menu ──────────────────────────────────────────────────────
+  const moreBtn = document.getElementById("org-bar-more") as HTMLButtonElement | null;
+  const moreMenu = document.getElementById("org-more-menu") as HTMLElement | null;
+
+  function closeMoreMenu() {
+    if (!moreMenu || !moreBtn) return;
+    moreMenu.hidden = true;
+    moreBtn.setAttribute("aria-expanded", "false");
+  }
+
+  if (moreBtn && moreMenu) {
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const opening = moreMenu.hidden;
+      moreMenu.hidden = !opening;
+      moreBtn.setAttribute("aria-expanded", String(opening));
+    });
+
+    moreMenu.querySelectorAll<HTMLElement>("[data-drawer]").forEach(item => {
+      item.addEventListener("click", () => {
+        closeMoreMenu();
+        openDrawer(item.dataset.drawer!);
+      });
+    });
+
+    document.addEventListener("click", closeMoreMenu);
+  }
+
+
+  // ── Mobile time detail popup ────────────────────────────────────────────
+  const timePopup = document.getElementById("time-popup") as HTMLElement | null;
+  const timePopupOverlay = document.getElementById("time-popup-overlay") as HTMLElement | null;
+  const timePopupText = document.getElementById("time-popup-text") as HTMLElement | null;
+
+  function openTimePopup(text: string) {
+    if (!timePopup || !timePopupOverlay || !timePopupText) return;
+    timePopupText.textContent = text;
+    timePopup.hidden = false;
+    timePopupOverlay.hidden = false;
+  }
+
+  function closeTimePopup() {
+    if (timePopup) timePopup.hidden = true;
+    if (timePopupOverlay) timePopupOverlay.hidden = true;
+  }
+
+  document.getElementById("time-popup-close")?.addEventListener("click", closeTimePopup);
+  timePopupOverlay?.addEventListener("click", closeTimePopup);
+
+  // Vote form time labels
+  document.querySelectorAll<HTMLElement>(".time-label[data-full]").forEach((el) => {
+    el.addEventListener("click", () => openTimePopup(el.dataset.full!));
+  });
+
+  // Grid column headers
+  document.querySelectorAll<HTMLElement>(".avail-opt-hdr[data-full]").forEach((el) => {
+    el.addEventListener("click", () => openTimePopup(el.dataset.full!));
+  });
+
+  // ── Availability grid scroll hint ───────────────────────────────────────
+  document.querySelectorAll<HTMLElement>(".avail-table-outer").forEach((outer) => {
+    const wrap = outer.querySelector<HTMLElement>(".avail-table-wrap");
+    const btn  = outer.querySelector<HTMLElement>(".scroll-hint");
+    if (!wrap || !btn) return;
+
+    const check = () => {
+      const atEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 4;
+      outer.classList.toggle("scroll-end", atEnd);
+    };
+    wrap.addEventListener("scroll", check, { passive: true });
+    check();
+
+    const scrollRight = () => wrap.scrollBy({ left: wrap.clientWidth * 0.75, behavior: "smooth" });
+    btn.addEventListener("click", scrollRight);
+    btn.addEventListener("touchstart", (e) => { e.preventDefault(); scrollRight(); }, { passive: false });
+  });
+
+  // ── Auto-dismiss banners ─────────────────────────────────────────────────
+  function dismissBanner(el: Element) {
+    (el as HTMLElement).style.maxHeight = el.getBoundingClientRect().height + "px";
+    requestAnimationFrame(() => (el as HTMLElement).classList.add("dismissing"));
+    el.addEventListener("transitionend", () => (el as HTMLElement).remove(), { once: true });
+  }
+
+  document.querySelectorAll(".auto-banner").forEach((banner) => {
+    const timer = setTimeout(() => dismissBanner(banner), 4000);
+    banner.querySelector(".banner-close")?.addEventListener("click", () => {
+      clearTimeout(timer);
+      dismissBanner(banner);
+    });
+  });
+
   // ── Invite form — client-side submit to avoid page reload ────────────────
-  const inviteForm = document.getElementById("invite-form") as HTMLFormElement | null;
-  if (inviteForm) {
-    inviteForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  // ── Invite info popup ────────────────────────────────────────────────────
+  const infoBtn = document.getElementById("invite-info-btn");
+  const infoPopup = document.getElementById("invite-info-popup");
+  if (infoBtn && infoPopup) {
+    infoBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      infoPopup.hidden = !infoPopup.hidden;
+    });
+    document.addEventListener("click", () => { infoPopup.hidden = true; });
+  }
 
-      const btn = document.getElementById("invite-btn") as HTMLButtonElement;
-      const resultDiv = document.getElementById("invite-link-result") as HTMLDivElement;
-      const errorDiv = document.getElementById("invite-error-result") as HTMLDivElement;
-      const linkInput = document.getElementById("invite-link-value") as HTMLAnchorElement;
-      const linkNote = document.getElementById("invite-link-note") as HTMLElement;
-      const errorMsg = document.getElementById("invite-error-msg") as HTMLElement;
+  const remindSendBtn = document.getElementById("remind-send-btn") as HTMLButtonElement | null;
+  if (remindSendBtn) {
+    remindSendBtn.addEventListener("click", async () => {
+      const resultDiv = document.getElementById("remind-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("remind-error") as HTMLDivElement;
+      const errorMsg = document.getElementById("remind-error-msg") as HTMLElement;
 
-      btn.disabled = true;
-      btn.textContent = "Getting link…";
+      remindSendBtn.disabled = true;
+      remindSendBtn.textContent = "Sending…";
+      resultDiv.style.display = "none";
       errorDiv.style.display = "none";
 
-      const { data, error } = await actions.inviteParticipants(new FormData(inviteForm));
+      const fd = new FormData();
+      fd.append("token", remindSendBtn.dataset.pollToken!);
 
-      btn.disabled = false;
-      btn.textContent = "♩ Get link";
+      const { data, error } = await actions.remindNonResponders(fd);
+
+      remindSendBtn.disabled = false;
+      remindSendBtn.textContent = "Send reminders";
 
       if (error) {
         errorMsg.textContent = error.message ?? "Unknown error.";
         errorDiv.style.display = "block";
-        resultDiv.style.display = "none";
-      } else if (data?.editToken) {
-        const pollToken = inviteForm.dataset.pollToken!;
-        const url = `${window.location.origin}/poll/${pollToken}?invite=${data.editToken}`;
-        linkInput.href = url;
-        linkInput.textContent = url;
-        linkNote.textContent = data.emailSent
-          ? "An email was also sent to the address you provided."
-          : "No email was sent — share the link above directly.";
-        resultDiv.style.display = "flex";
-        // Clear fields ready for next invite
-        (inviteForm.querySelector("#invite-name") as HTMLInputElement).value = "";
-        (inviteForm.querySelector("#invite-email") as HTMLInputElement).value = "";
+      } else if (data) {
+        resultDiv.textContent = `Reminders sent to ${data.sent} ${data.sent === 1 ? "person" : "people"}.`;
+        resultDiv.style.display = "block";
+        remindSendBtn.style.display = "none";
+      }
+    });
+  }
+
+  const bulkInviteForm = document.getElementById("bulk-invite-form") as HTMLFormElement | null;
+  if (bulkInviteForm) {
+    bulkInviteForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const btn = document.getElementById("bulk-invite-btn") as HTMLButtonElement;
+      const resultDiv = document.getElementById("bulk-invite-result") as HTMLDivElement;
+      const errorDiv = document.getElementById("bulk-invite-error") as HTMLDivElement;
+      const errorMsg = document.getElementById("bulk-invite-error-msg") as HTMLElement;
+
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      resultDiv.style.display = "none";
+      errorDiv.style.display = "none";
+
+      const fd = new FormData();
+      fd.append("token", bulkInviteForm.dataset.pollToken!);
+      fd.append("emails", (document.getElementById("bulk-emails") as HTMLTextAreaElement).value);
+
+      const { data, error } = await actions.bulkInvite(fd);
+
+      btn.disabled = false;
+      btn.textContent = "Send invites";
+
+      if (error) {
+        errorMsg.textContent = error.message ?? "Unknown error.";
+        errorDiv.style.display = "block";
+      } else if (data) {
+        const parts = [`Invites sent to ${data.sent} ${data.sent === 1 ? "person" : "people"}.`];
+        if (data.skipped > 0) parts.push(`${data.skipped} already invited or skipped.`);
+        resultDiv.textContent = parts.join(" ");
+        resultDiv.style.display = "block";
+        (document.getElementById("bulk-emails") as HTMLTextAreaElement).value = "";
       }
     });
   }
@@ -1784,19 +2528,18 @@ function cellColor(av: number | undefined): string {
     const init = parseInt(row.dataset.init ?? "-1", 10);
     state[id] = init >= 0 ? init : -1;
 
-    // Highlight the pre-existing vote button
+    // Highlight the pre-existing vote segment
     if (init >= 0) {
-      row.querySelector<HTMLButtonElement>(`.vibe-btn[data-vibe="${init}"]`)?.classList.add("active");
+      row.querySelector<HTMLButtonElement>(`.vibe-seg[data-vibe="${init}"]`)?.classList.add("active");
       applyBullet(row, init);
     }
 
-    // Wire up vibe buttons
-    row.querySelectorAll<HTMLButtonElement>(".vibe-btn").forEach((btn) => {
+    // Wire up pill segments
+    row.querySelectorAll<HTMLButtonElement>(".vibe-seg").forEach((btn) => {
       btn.addEventListener("click", () => {
         const vibe = parseInt(btn.dataset.vibe!, 10);
         state[id] = vibe;
-        // Toggle active class
-        row.querySelectorAll(".vibe-btn").forEach((b) => b.classList.remove("active"));
+        row.querySelectorAll(".vibe-seg").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         applyBullet(row, vibe);
       });
@@ -1809,7 +2552,7 @@ function cellColor(av: number | undefined): string {
     if (vibe === 1) bullet.style.background = "var(--yes)";
     else if (vibe === 2) bullet.style.background = "var(--maybe)";
     else if (vibe === 0) bullet.style.background = "var(--red)";
-    else bullet.style.background = "var(--bullet)";
+    else bullet.style.background = "var(--bullet)";  // unset
   }
 
   // ── Confirm Dates — disable submit when no checkbox is checked ──────────────
@@ -1825,26 +2568,21 @@ function cellColor(av: number | undefined): string {
   }
 
   document.getElementById("vote-form")?.addEventListener("submit", (e) => {
-    const voteData = Object.entries(state)
-      .filter(([, av]) => av >= 0)
-      .map(([optionId, availability]) => ({ optionId: parseInt(optionId, 10), availability }));
+    const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
+      .map((r) => parseInt(r.dataset.optionId!, 10));
+
+    // Only submit slots where the user made an explicit selection
+    const voteData = allIds
+      .filter(id => state[String(id)] >= 0)
+      .map(id => ({ optionId: id, availability: state[String(id)] }));
 
     if (voteData.length === 0) {
-      // Default all unset options to "busy" (0) so the submission is not empty
-      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
-        .map((r) => parseInt(r.dataset.optionId!, 10));
-      const fallback = allIds.map((id) => ({ optionId: id, availability: 0 }));
-      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(fallback);
-    } else {
-      // Fill in any unset options as busy
-      const allIds = Array.from(document.querySelectorAll<HTMLElement>(".time-row"))
-        .map((r) => parseInt(r.dataset.optionId!, 10));
-      const full = allIds.map((id) => ({
-        optionId: id,
-        availability: state[String(id)] >= 0 ? state[String(id)] : 0,
-      }));
-      (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(full);
+      e.preventDefault();
+      alert("Please select your availability for at least one time slot.");
+      return;
     }
+
+    (document.getElementById("vote-data") as HTMLInputElement).value = JSON.stringify(voteData);
   });
 </script>
 

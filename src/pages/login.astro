@@ -47,7 +47,7 @@ const errorMessages: Record<string, string> = {
                   id="email"
                   name="email"
                   type="email"
-                  autocomplete="email webauthn"
+                  autocomplete="email"
                   placeholder="you@example.com"
                   class="field-input"
                   autofocus
@@ -70,18 +70,18 @@ const errorMessages: Record<string, string> = {
                 <button id="back-btn" type="button" class="back-btn">Change</button>
               </div>
 
-              <!-- "Create a passkey" — only shown when no passkey exists -->
-              <button id="register-passkey-btn" type="button" class="ct-btn" style="width:100%;justify-content:center;display:none;">
-                Create a passkey
-              </button>
-
-              <!-- Magic link form — only shown when no passkey exists -->
-              <form id="email-form" method="POST" action={actions.sendMagicLink} style="display:none;margin-top:12px;">
+              <!-- Magic link is always the primary action -->
+              <form id="email-form" method="POST" action={actions.sendMagicLink}>
                 <input type="hidden" id="email-hidden" name="email" value="" />
-                <button type="submit" class="magic-link-btn" style="width:100%;text-align:center;">
-                  Email me a link instead
+                <button type="submit" class="ct-btn" style="width:100%;justify-content:center;">
+                  Email me a link
                 </button>
               </form>
+
+              <!-- Passkey sign-in — only shown when user already has a passkey -->
+              <button id="passkey-btn" type="button" class="passkey-alt-btn" style="display:none;">
+                Or sign in with passkey
+              </button>
             </div>
           </div>
         </>
@@ -92,21 +92,20 @@ const errorMessages: Record<string, string> = {
 
 <script>
   import {
-    startRegistration,
     startAuthentication,
     browserSupportsWebAuthn,
   } from "@simplewebauthn/browser";
 
-  const emailInput    = document.getElementById("email")              as HTMLInputElement  | null;
-  const continueBtn   = document.getElementById("continue-btn")       as HTMLButtonElement | null;
-  const stepEmail     = document.getElementById("step-email")         as HTMLElement       | null;
-  const stepOptions   = document.getElementById("step-options")       as HTMLElement       | null;
-  const emailDisplay  = document.getElementById("email-display")      as HTMLElement       | null;
-  const backBtn       = document.getElementById("back-btn")           as HTMLButtonElement | null;
-  const registerBtn   = document.getElementById("register-passkey-btn") as HTMLButtonElement | null;
-  const emailForm     = document.getElementById("email-form")         as HTMLFormElement   | null;
-  const emailHidden   = document.getElementById("email-hidden")       as HTMLInputElement  | null;
-  const errorBox      = document.getElementById("passkey-error")      as HTMLDivElement    | null;
+  const emailInput    = document.getElementById("email")         as HTMLInputElement  | null;
+  const continueBtn   = document.getElementById("continue-btn")  as HTMLButtonElement | null;
+  const stepEmail     = document.getElementById("step-email")    as HTMLElement       | null;
+  const stepOptions   = document.getElementById("step-options")  as HTMLElement       | null;
+  const emailDisplay  = document.getElementById("email-display") as HTMLElement       | null;
+  const backBtn       = document.getElementById("back-btn")      as HTMLButtonElement | null;
+  const passkeyBtn    = document.getElementById("passkey-btn")   as HTMLButtonElement | null;
+  const emailForm     = document.getElementById("email-form")    as HTMLFormElement   | null;
+  const emailHidden   = document.getElementById("email-hidden")  as HTMLInputElement  | null;
+  const errorBox      = document.getElementById("passkey-error") as HTMLDivElement    | null;
 
   // Enable Continue only when there's a non-empty email
   function syncContinueBtn() {
@@ -156,17 +155,12 @@ const errorMessages: Record<string, string> = {
     }
   }
 
-  function showPasskeyFallback(email: string) {
-    if (stepEmail)    stepEmail.style.display    = "none";
-    if (stepOptions)  stepOptions.style.display  = "block";
-    if (emailDisplay) emailDisplay.textContent   = email;
-    if (emailHidden)  emailHidden.value          = email;
-    if (registerBtn)  registerBtn.style.display  = "none";
-    if (emailForm)    emailForm.style.display    = "block";
-  }
-
   async function doPasskeyAuth() {
     clearError();
+    if (passkeyBtn) {
+      passkeyBtn.disabled = true;
+      passkeyBtn.textContent = "Waiting for biometric…";
+    }
     try {
       const { status: s1, data: options } = await fetchJSON("/auth/passkey-authenticate");
       if (s1 !== 200) throw new Error(options.error ?? `Auth options failed (${s1})`);
@@ -181,12 +175,15 @@ const errorMessages: Record<string, string> = {
       if (!data.ok) throw new Error(data.error ?? `Sign-in failed (${s2})`);
       window.location.href = "/";
     } catch (err: any) {
-      const email = emailHidden?.value ?? "";
-      showPasskeyFallback(email);
       if (err?.name === "NotAllowedError") {
-        showError("Passkey sign-in was cancelled. Use the magic link below to log in.");
+        showError("Passkey sign-in was cancelled. Use the magic link above to log in.");
       } else {
-        showError(err?.message ?? "Something went wrong. Use the magic link below to log in.");
+        showError(err?.message ?? "Something went wrong. Use the magic link above to log in.");
+      }
+    } finally {
+      if (passkeyBtn) {
+        passkeyBtn.disabled = false;
+        passkeyBtn.textContent = "Or sign in with passkey";
       }
     }
   }
@@ -198,17 +195,18 @@ const errorMessages: Record<string, string> = {
   }
 
   function showStep2(email: string, hasPasskey: boolean) {
-    if (stepEmail)   stepEmail.style.display   = "none";
-    if (stepOptions) stepOptions.style.display = "block";
-    if (emailDisplay) emailDisplay.textContent = email;
-    if (emailHidden)  emailHidden.value        = email;
+    if (stepEmail)    stepEmail.style.display    = "none";
+    if (stepOptions)  stepOptions.style.display  = "block";
+    if (emailDisplay) emailDisplay.textContent   = email;
+    if (emailHidden)  emailHidden.value          = email;
 
-    // Show "Create a passkey" and magic-link only when no passkey exists
-    if (registerBtn) registerBtn.style.display = hasPasskey ? "none" : "block";
-    if (emailForm)   emailForm.style.display   = hasPasskey ? "none" : "block";
+    // Passkey link only shown for users who already have one
+    if (passkeyBtn) {
+      passkeyBtn.style.display = (hasPasskey && browserSupportsWebAuthn()) ? "block" : "none";
+    }
   }
 
-  // Continue button: check for passkey, then act
+  // Continue button: look up email, then show options
   continueBtn?.addEventListener("click", async () => {
     const email = emailInput?.value.trim() ?? "";
     if (!email) { emailInput?.focus(); return; }
@@ -220,14 +218,7 @@ const errorMessages: Record<string, string> = {
     try {
       const { status, data } = await fetchJSON(`/auth/passkey-check?email=${encodeURIComponent(email)}`);
       if (status !== 200) throw new Error(data.error ?? "Lookup failed");
-
-      if (data.hasPasskey && browserSupportsWebAuthn()) {
-        // Immediately trigger biometric — no intermediate screen
-        showStep2(email, true);
-        await doPasskeyAuth();
-      } else {
-        showStep2(email, false);
-      }
+      showStep2(email, data.hasPasskey);
     } catch (err: any) {
       showError(err?.message ?? "Something went wrong. Please try again.");
     } finally {
@@ -251,35 +242,9 @@ const errorMessages: Record<string, string> = {
     }
   });
 
-  // Register a new passkey
-  registerBtn?.addEventListener("click", async () => {
-    const email = emailHidden?.value ?? "";
-    if (!email) { showStep1(); return; }
-    clearError();
-    registerBtn.disabled = true;
-    registerBtn.textContent = "Waiting for biometric…";
-
-    try {
-      const { status: s1, data: optionsData } = await fetchJSON(`/auth/passkey-register?email=${encodeURIComponent(email)}`);
-      if (s1 !== 200) throw new Error(optionsData.error ?? `Register options failed (${s1})`);
-      const { options, userId } = optionsData;
-
-      const attestation = await startRegistration({ optionsJSON: options });
-
-      const { status: s2, data } = await fetchJSON("/auth/passkey-register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response: attestation, userId }),
-      });
-      if (!data.ok) throw new Error(data.error ?? `Registration failed (${s2})`);
-      window.location.href = "/";
-    } catch (err: any) {
-      if (err?.name !== "NotAllowedError") {
-        showError(err?.message ?? "Something went wrong. Try emailing a link instead.");
-      }
-      registerBtn.disabled = false;
-      registerBtn.textContent = "Create a passkey";
-    }
+  // Explicit passkey sign-in (only visible for users who already have one)
+  passkeyBtn?.addEventListener("click", () => {
+    doPasskeyAuth();
   });
 </script>
 
@@ -405,7 +370,10 @@ const errorMessages: Record<string, string> = {
     color: var(--ink);
   }
 
-  .magic-link-btn {
+  .passkey-alt-btn {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
     font-family: 'DM Mono', monospace;
     font-size: 12px;
     letter-spacing: 0.08em;
@@ -414,13 +382,18 @@ const errorMessages: Record<string, string> = {
     border: none;
     cursor: pointer;
     padding: 10px 0;
+    text-align: center;
     text-decoration: underline;
     text-underline-offset: 3px;
-    white-space: nowrap;
     transition: color 0.15s;
   }
 
-  .magic-link-btn:hover {
+  .passkey-alt-btn:hover {
     color: var(--ink);
+  }
+
+  .passkey-alt-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

@@ -13,14 +13,16 @@ if (result?.data?.ok) {
 const fromToken = Astro.url.searchParams.get("from") ?? null;
 let prefillTitle = "";
 let prefillDescription = "";
+let prefillDuration = 60;
 if (fromToken) {
   const old = await env.DB
-    .prepare(`SELECT title, description FROM polls WHERE token = ?`)
+    .prepare(`SELECT title, description, duration_minutes FROM polls WHERE token = ?`)
     .bind(fromToken)
-    .first<{ title: string; description: string | null }>();
+    .first<{ title: string; description: string | null; duration_minutes: number }>();
   if (old) {
     prefillTitle = old.title;
     prefillDescription = old.description ?? "";
+    prefillDuration = old.duration_minutes ?? 60;
   }
 }
 ---
@@ -44,7 +46,7 @@ if (fromToken) {
 
       {fromToken && (
         <div class="reschedule-notice">
-          ♩ Starting a new poll with the same title and description. Add your new date options below.
+          · Starting a new poll with the same title and description. Add your new date options below.
         </div>
       )}
 
@@ -82,17 +84,31 @@ if (fromToken) {
           >{prefillDescription}</textarea>
         </div>
 
+        <!-- Duration -->
+        <div class="field-group">
+          <label for="duration" class="field-label">Meeting duration</label>
+          <select id="duration" name="duration" class="field-select">
+            <option value="15"  selected={prefillDuration === 15}>15 minutes</option>
+            <option value="30"  selected={prefillDuration === 30}>30 minutes</option>
+            <option value="45"  selected={prefillDuration === 45}>45 minutes</option>
+            <option value="60"  selected={prefillDuration === 60 || prefillDuration == null}>1 hour</option>
+            <option value="90"  selected={prefillDuration === 90}>1.5 hours</option>
+            <option value="120" selected={prefillDuration === 120}>2 hours</option>
+            <option value="180" selected={prefillDuration === 180}>3 hours</option>
+          </select>
+        </div>
+
         <!-- Date/time divider -->
         <div class="section-divider">
           <div class="divider-line"></div>
-          <span class="divider-label">♩ Date &amp; time options</span>
+          <span class="divider-label">· Date &amp; time options</span>
           <div class="divider-line"></div>
         </div>
 
         <!-- Dynamic slot list -->
         <div id="slots-container">
           <div class="datetime-slot">
-            <span class="slot-icon" aria-hidden="true">♩</span>
+            <span class="slot-icon" aria-hidden="true">·</span>
             <input type="datetime-local" class="slot-input datetime-option" />
             <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
           </div>
@@ -184,6 +200,28 @@ if (fromToken) {
     padding: 8px 0 10px;
     outline: none;
     transition: border-color 0.2s;
+  }
+
+  .field-select {
+    width: 100%;
+    border: none;
+    border-bottom: 2px solid var(--ink);
+    background: transparent;
+    font-family: 'Libre Baskerville', serif;
+    font-size: 18px;
+    color: var(--ink);
+    padding: 8px 0 10px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230f0f0e' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    padding-right: 24px;
+  }
+
+  .field-select:focus {
+    border-color: var(--red);
   }
 
   .field-input:focus {
@@ -384,7 +422,7 @@ if (fromToken) {
     const div = document.createElement("div");
     div.className = "datetime-slot";
     div.innerHTML = `
-      <span class="slot-icon" aria-hidden="true">♩</span>
+      <span class="slot-icon" aria-hidden="true">·</span>
       <input type="datetime-local" class="slot-input datetime-option" />
       <button type="button" class="slot-remove" aria-label="Remove this time" title="Remove">×</button>
     `;

@@ -10,6 +10,8 @@ export const CreatePollSchema = z.object({
 
     timezone: z.string().min(1, "Timezone is required."),
 
+    duration: z.coerce.number().int().min(15).max(480).default(60),
+
     fromToken: z.string().optional(),
 
     options: z.preprocess(
@@ -48,4 +50,30 @@ export const CreatePollSchema = z.object({
             })
     ),
 
+});
+
+export const EditPollSchema = z.object({
+    token: z.string().min(1),
+
+    title: z.string().min(1, "Poll title is required."),
+
+    description: z
+        .string()
+        .nullish()
+        .transform((v) => (v?.trim() ? v.trim() : undefined)),
+
+    duration: z.coerce.number().int().min(15).max(480).default(60),
+
+    options: z.preprocess(
+        (v) => {
+            if (typeof v === "string") {
+                try { return JSON.parse(v); } catch { return []; }
+            }
+            return Array.isArray(v) ? v : [];
+        },
+        z.array(z.object({
+            id: z.coerce.number().int().nullable().optional(),
+            datetime: z.string().min(1),
+        }))
+    ).optional(),
 });
