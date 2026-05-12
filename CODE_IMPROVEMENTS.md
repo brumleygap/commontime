@@ -49,7 +49,7 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 
 ### Low risk
 
-- [ ] **#S3 Admin email hardcoded in 4 more files** (`src/components/AppHeader.astro:18`, `src/pages/admin/push.astro:6`, `src/pages/api/admin/upload-image.ts:5`, `src/pages/poll/[token].astro:193`) — #6 fixed `admin.ts` and `polls.ts` but missed these. If the admin email ever changes, these pages silently break (wrong person gets admin UI / upload access denied).
+- [x] **#S3 Admin email hardcoded in 4 more files** (`src/components/AppHeader.astro:18`, `src/pages/admin/push.astro:6`, `src/pages/api/admin/upload-image.ts:5`, `src/pages/poll/[token].astro:193`) — #6 fixed `admin.ts` and `polls.ts` but missed these. If the admin email ever changes, these pages silently break (wrong person gets admin UI / upload access denied). ✅ Fixed 2026-05-12
 
 - [ ] **#S4 Account existence oracle via passkey-check** (`src/pages/auth/passkey-check.ts:6`) — `GET /auth/passkey-check?email=...` is unauthenticated and returns `{ hasPasskey: true/false }`, confirming whether any email is a registered user. Low impact for this app but worth knowing; fix by requiring authentication or always returning the same shape without distinguishing non-existent from no-passkey.
 

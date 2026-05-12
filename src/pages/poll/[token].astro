@@ -190,7 +190,7 @@ if (isCreator && isOpen) {
     .first<{ n: number }>();
   nonResponderCount = nrRow?.n ?? 0;
 
-  const isAdmin = currentUser?.email === "ernie.braganza@gmail.com";
+  const isAdmin = currentUser?.email === env.ADMIN_EMAIL;
   if (!isAdmin && poll.last_reminded_at) {
     const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
     if (hoursElapsed < 24) {
