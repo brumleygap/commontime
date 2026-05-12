@@ -61,14 +61,30 @@ const participants = (
 
 const origin = new URL(Astro.request.url).origin;
 
-type LinkInfo = { url: string; expires: string | null; expired: boolean; canRenew: boolean };
+type LinkInfo = { url: string; expiryLabel: string | null; expired: boolean; canRenew: boolean };
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function getLinkInfo(p: typeof participants[0]): LinkInfo {
   if (p.invite_token && p.invite_expires_at) {
-    const expired = new Date(p.invite_expires_at) < new Date() || !!p.invite_used_at;
+    const dateExpired = new Date(p.invite_expires_at) < new Date();
+    const used = !!p.invite_used_at;
+    const expired = dateExpired || used;
+
+    let expiryLabel: string;
+    if (used && !dateExpired) {
+      expiryLabel = "Link opened — not voted";
+    } else if (dateExpired) {
+      expiryLabel = `Expired ${fmtDate(p.invite_expires_at)}`;
+    } else {
+      expiryLabel = `Expires ${fmtDate(p.invite_expires_at)}`;
+    }
+
     return {
       url: `${origin}/auth/invite?token=${p.invite_token}`,
-      expires: p.invite_expires_at,
+      expiryLabel,
       expired,
       canRenew: !!p.user_id,
     };
@@ -76,16 +92,12 @@ function getLinkInfo(p: typeof participants[0]): LinkInfo {
   if (p.edit_token) {
     return {
       url: `${origin}/poll/${token}?invite=${p.edit_token}`,
-      expires: null,
+      expiryLabel: null,
       expired: false,
       canRenew: false,
     };
   }
-  return { url: `${origin}/poll/${token}`, expires: null, expired: false, canRenew: false };
-}
-
-function fmtExpiry(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return { url: `${origin}/poll/${token}`, expiryLabel: null, expired: false, canRenew: false };
 }
 ---
 
@@ -114,9 +126,9 @@ function fmtExpiry(iso: string): string {
                 <code class={`p-link${link.expired ? " expired" : ""}`}>{link.url}</code>
               </div>
               <div class="p-actions">
-                {link.expires && (
+                {link.expiryLabel && (
                   <span class={`p-expiry ${link.expired ? "expired" : ""}`} data-expiry>
-                    {link.expired ? "Expired" : "Expires"} {fmtExpiry(link.expires)}
+                    {link.expiryLabel}
                   </span>
                 )}
                 <button
