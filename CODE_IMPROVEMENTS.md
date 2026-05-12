@@ -35,4 +35,30 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 
 ---
 
+## Security Review 1 — 2026-05-12
+
+> Context: scheduling app storing name, email, and meeting availability. No financial data, no SSNs. Risk ratings are calibrated accordingly.
+
+### Medium risk
+
+- [ ] **#S1 No rate limiting on magic-link endpoint** (`src/actions/auth.ts:6`) — `sendMagicLink` inserts a token and sends an email with no per-IP or per-email cooldown. Any unauthenticated caller can trigger unlimited emails to an arbitrary address. Fix: track `last_magic_link_at` on the user row and reject requests within a 60-second window.
+
+### Low-medium risk
+
+- [ ] **#S2 No HTTP security headers** (global) — No `Content-Security-Policy`, `X-Frame-Options`, or `X-Content-Type-Options` headers are set anywhere. CSP limits XSS blast radius; `X-Frame-Options: DENY` prevents the vote/confirm pages from being iframed for clickjacking. Fix: add a `_headers` file or set them in the worker response for all HTML routes.
+
+### Low risk
+
+- [ ] **#S3 Admin email hardcoded in 4 more files** (`src/components/AppHeader.astro:18`, `src/pages/admin/push.astro:6`, `src/pages/api/admin/upload-image.ts:5`, `src/pages/poll/[token].astro:193`) — #6 fixed `admin.ts` and `polls.ts` but missed these. If the admin email ever changes, these pages silently break (wrong person gets admin UI / upload access denied).
+
+- [ ] **#S4 Account existence oracle via passkey-check** (`src/pages/auth/passkey-check.ts:6`) — `GET /auth/passkey-check?email=...` is unauthenticated and returns `{ hasPasskey: true/false }`, confirming whether any email is a registered user. Low impact for this app but worth knowing; fix by requiring authentication or always returning the same shape without distinguishing non-existent from no-passkey.
+
+- [ ] **#S5 No file size limit on admin image upload** (`src/pages/api/admin/upload-image.ts:12`) — `formData.get("file")` accepts any size. A large upload blocks the Worker for its duration and burns R2 write quota. Fix: check `file.size` before streaming to R2 (e.g. reject > 5 MB).
+
+### Informational
+
+- [ ] **#S6 WebAuthn auth challenge not scoped to credential** (`src/pages/auth/passkey-authenticate.ts:50`) — At authentication time the challenge is selected by `ORDER BY id DESC LIMIT 1` rather than being tied to the authenticating user/device. Two simultaneous auth flows in the same 5-minute window could share a challenge. The 5-minute expiry significantly limits exploitability; no action required unless concurrent auth becomes common.
+
+---
+
 *Add new review sections above this line as reviews are conducted.*
