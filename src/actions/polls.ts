@@ -621,7 +621,7 @@ export const remindNonResponders = defineAction({
                 .all<{ option_datetime: string }>()
         ).results.map((r: { option_datetime: string }) => r.option_datetime);
 
-        const isAdmin = userEmail === "ernie.braganza@gmail.com";
+        const isAdmin = userEmail === env.ADMIN_EMAIL;
         if (!isAdmin && poll.last_reminded_at) {
             const hoursElapsed = (Date.now() - new Date(poll.last_reminded_at).getTime()) / (1000 * 60 * 60);
             if (hoursElapsed < 24) {

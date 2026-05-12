@@ -10,13 +10,13 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 
 - [x] **#1 Sequential vote inserts** (`src/actions/votes.ts:113`) — `await` inside a `for` loop sends N serial D1 round-trips and leaves the participant with partial votes if any insert fails mid-loop. Fix: `db.batch([...])` is atomic and one round-trip. ✅ Fixed 2026-05-09
 - [ ] **#2 Split poll finalization state** (`src/actions/polls.ts`, `src/actions/votes.ts:57`) — `chosen_option_id` (legacy) and `chosen_poll_options` junction table coexist with no single authoritative `isPollLocked()` check. A diverged state creates polls that appear open in some code paths and closed in others.
-- [ ] **#3 No DB transactions on multi-step mutations** (`src/actions/polls.ts:255, 22`) — `inviteParticipants` and `createPoll` do sequential inserts with no transaction. Partial failure leaves ghost rows (e.g. a participant with no invite token).
+- [ ] **#3 No DB transactions on multi-step mutations** (`src/actions/polls.ts:24, 236`) — `createPoll` and `inviteParticipants` do sequential inserts with no transaction. Partial failure leaves ghost rows (e.g. a participant with no invite token).
 
 ### Medium priority
 
 - [x] **#4 4× duplicated recipient query** (`src/actions/polls.ts:187, 346, 407, 466`) — Identical 10-line `SELECT COALESCE(u.email, pa.email)` pasted into `lockPoll`, `cancelPoll`, `uncancelPoll`, `unlockPoll`. Extract to a shared helper. ✅ Fixed 2026-05-12
 - [x] **#5 Dead API route** (`src/pages/api/polls/create.ts`) — Prototype scaffold that echoes input and writes nothing to the database. Misleads anyone trying to understand poll creation. ✅ Fixed 2026-05-09
-- [ ] **#6 Admin email hardcoded in source** (`src/actions/admin.ts:6`) — `ADMIN_EMAIL = "ernie.braganza@gmail.com"` in source. Should be `env.ADMIN_EMAIL` so it can change without a code deploy.
+- [x] **#6 Admin email hardcoded in source** (`src/actions/admin.ts:6`, `src/actions/polls.ts:624`) — `ADMIN_EMAIL = "ernie.braganza@gmail.com"` in `admin.ts` and a second independent hardcode in `remindNonResponders` (doesn't even use the constant). Both should read from `env.ADMIN_EMAIL`. ✅ Fixed 2026-05-12
 
 ### Low-medium priority
 

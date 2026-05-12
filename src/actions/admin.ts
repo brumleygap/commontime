@@ -3,8 +3,6 @@ import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { sendPushToUsers, type PushAction } from "../lib/webpush";
 
-const ADMIN_EMAIL = "ernie.braganza@gmail.com";
-
 export const sendAdminPush = defineAction({
     accept: "form",
     input: z.object({
@@ -20,7 +18,7 @@ export const sendAdminPush = defineAction({
         action1_url: z.string().nullish().transform(v => v || undefined),
     }),
     handler: async (input, context) => {
-        if (context.locals.user?.email !== ADMIN_EMAIL) {
+        if (context.locals.user?.email !== env.ADMIN_EMAIL) {
             throw new ActionError({ code: "FORBIDDEN", message: "Admin only." });
         }
 

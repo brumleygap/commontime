@@ -23,7 +23,8 @@
   },
   "vars": {
     "VAPID_PUBLIC_KEY": "BK8QaMA__Heb7Dw2q8Os_XhCaHV0Eb-eHXSR_OJ4q9R5FOr0N0Os19-xzAs2uYLu-T6lnFRj0RjSlVkyJASc1g8",
-    "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com"
+    "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com",
+    "ADMIN_EMAIL": "ernie.braganza@gmail.com"
   },
   "services": [
     {
@@ -49,7 +50,8 @@
       "name": "commontime-preview",
       "vars": {
         "VAPID_PUBLIC_KEY": "BK8QaMA__Heb7Dw2q8Os_XhCaHV0Eb-eHXSR_OJ4q9R5FOr0N0Os19-xzAs2uYLu-T6lnFRj0RjSlVkyJASc1g8",
-        "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com"
+        "VAPID_SUBJECT": "mailto:ernie.braganza@gmail.com",
+        "ADMIN_EMAIL": "ernie.braganza@gmail.com"
       },
       "d1_databases": [
         {
