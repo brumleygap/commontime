@@ -4,7 +4,7 @@ import { env } from "cloudflare:workers";
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 export const POST: APIRoute = async ({ request, locals }) => {
-  if (locals.user?.email !== env.ADMIN_EMAIL) {
+  if (!locals.user?.isAdmin) {
     return new Response(null, { status: 403 });
   }
 

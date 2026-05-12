@@ -1,7 +1,6 @@
 ---
-import { env } from "cloudflare:workers";
 const user = Astro.locals.user;
-const isAdmin = user?.email === env.ADMIN_EMAIL;
+const isAdmin = user?.isAdmin ?? false;
 ---
 
 <header style="background: var(--ink); border-bottom: 3px solid rgba(245,242,236,0.15);">

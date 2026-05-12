@@ -18,7 +18,7 @@ export const sendAdminPush = defineAction({
         action1_url: z.string().nullish().transform(v => v || undefined),
     }),
     handler: async (input, context) => {
-        if (context.locals.user?.email !== env.ADMIN_EMAIL) {
+        if (!context.locals.user?.isAdmin) {
             throw new ActionError({ code: "FORBIDDEN", message: "Admin only." });
         }
 
