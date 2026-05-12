@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { SubmitVoteSchema } from "./schemas/votes";
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
+import { isPollLocked } from "../lib/poll";
 
 export const submitVote = defineAction({
     accept: "form",
@@ -55,7 +56,7 @@ export const submitVote = defineAction({
                 }
             } else if (input.invite) {
                 // Invited via unique link: must be the browser that originally claimed it
-                if (poll.chosen_option_id !== null) {
+                if (isPollLocked(poll)) {
                     throw new ActionError({ code: "BAD_REQUEST", message: "This poll has been finalized." });
                 }
 

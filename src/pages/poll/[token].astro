@@ -2,6 +2,7 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
 import { env } from "cloudflare:workers";
+import { isPollLocked } from "../../lib/poll";
 
 const { token } = Astro.params;
 const db = env.DB;
@@ -170,7 +171,7 @@ if (currentUser) {
 
 const isCreator = !!(currentUser && poll.creator_id && currentUser.id === poll.creator_id);
 const isCancelled = poll.cancelled_at !== null;
-const isOpen = poll.chosen_option_id === null && !isCancelled;
+const isOpen = !isPollLocked(poll) && !isCancelled;
 
 // Non-responder count and reminder cooldown (creator only)
 let nonResponderCount = 0;

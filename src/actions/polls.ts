@@ -5,6 +5,7 @@ import { CreatePollSchema, EditPollSchema } from "./schemas/polls";
 import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail, sendReminderEmail, sendPollEditedEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
+import { isPollLocked } from "../lib/poll";
 
 async function getPollRecipients(db: typeof env.DB, pollId: number): Promise<{ email: string; user_id: number | null }[]> {
     return (
@@ -819,7 +820,7 @@ export const editPoll = defineAction({
             .bind(input.title, input.description ?? null, input.duration, poll.id)
             .run();
 
-        const isLocked = poll.chosen_option_id !== null;
+        const isLocked = isPollLocked(poll);
         if (isLocked || !input.options) {
             return { ok: true, token: input.token };
         }
