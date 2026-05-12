@@ -299,6 +299,11 @@ if (user) {
                 {poll.is_locked && poll.chosenFormatted && (
                   <div class="poll-row-chosen">{poll.chosenFormatted}</div>
                 )}
+                {poll.is_open && (
+                  <a href="/login" class="guest-respond-link" onclick="event.stopPropagation()">
+                    Log in to respond →
+                  </a>
+                )}
               </div>
             </div>
             <button class="dismiss-btn" aria-label="Hide this poll" title="Hide">×</button>
@@ -730,6 +735,20 @@ if (user) {
 
   .guest-login-nudge a {
     color: var(--ink);
+    text-underline-offset: 2px;
+  }
+
+  .guest-respond-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--red);
+    text-decoration: none;
+  }
+  .guest-respond-link:hover {
+    text-decoration: underline;
     text-underline-offset: 2px;
   }
 
