@@ -1,5 +1,6 @@
 ---
 const user = Astro.locals.user;
+const isAdmin = user?.isAdmin ?? false;
 ---
 
 <header style="background: var(--ink); border-bottom: 3px solid rgba(245,242,236,0.15);">
@@ -15,7 +16,7 @@ const user = Astro.locals.user;
       {user ? (
         <>
           <span class="hidden sm:block" style="opacity: 0.7;">{user.email}</span>
-          {user.email === 'ernie.braganza@gmail.com' && (
+          {isAdmin && (
             <a href="/admin/push" style="color: var(--on-dark); font-family: 'DM Mono', monospace; font-size: 13px; letter-spacing: 0.05em; text-decoration: none; padding: 6px 8px 6px 0; min-height: 44px; display: inline-flex; align-items: center; opacity: 0.8;">
               Admin
             </a>

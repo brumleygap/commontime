@@ -2,10 +2,9 @@ import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-const ADMIN_EMAIL = "ernie.braganza@gmail.com";
 
 export const POST: APIRoute = async ({ request, locals }) => {
-  if (locals.user?.email !== ADMIN_EMAIL) {
+  if (!locals.user?.isAdmin) {
     return new Response(null, { status: 403 });
   }
 

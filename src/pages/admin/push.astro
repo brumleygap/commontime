@@ -3,9 +3,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
 import { env } from "cloudflare:workers";
 
-const ADMIN_EMAIL = "ernie.braganza@gmail.com";
-
-if (!Astro.locals.user || Astro.locals.user.email !== ADMIN_EMAIL) {
+if (!Astro.locals.user?.isAdmin) {
   return Astro.redirect("/");
 }
 

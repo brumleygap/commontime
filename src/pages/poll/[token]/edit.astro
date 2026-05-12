@@ -2,6 +2,7 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
 import { env } from "cloudflare:workers";
+import { isPollLocked } from "../../../lib/poll";
 
 const result = await Astro.getActionResult(actions.editPoll);
 if (result?.data?.ok) {
@@ -22,7 +23,7 @@ if (!currentUser || currentUser.id !== poll.creator_id) {
   return Astro.redirect(`/poll/${token}`);
 }
 
-const isLocked = poll.chosen_option_id !== null;
+const isLocked = isPollLocked(poll);
 
 type OptionRow = { id: number; option_datetime: string; vote_count: number };
 let options: OptionRow[] = [];

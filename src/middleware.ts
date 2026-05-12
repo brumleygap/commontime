@@ -13,16 +13,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
         const row = await env.DB
             .prepare(
-                `SELECT s.user_id, u.email, u.name
+                `SELECT s.user_id, u.email, u.name, u.is_admin
                  FROM sessions s
                  JOIN users u ON u.id = s.user_id
                  WHERE s.token = ? AND s.expires_at > ?`
             )
             .bind(sessionToken, now)
-            .first<{ user_id: number; email: string; name: string | null }>();
+            .first<{ user_id: number; email: string; name: string | null; is_admin: number }>();
 
         if (row) {
-            context.locals.user = { id: row.user_id, email: row.email, name: row.name };
+            context.locals.user = { id: row.user_id, email: row.email, name: row.name, isAdmin: !!row.is_admin };
         }
     }
 

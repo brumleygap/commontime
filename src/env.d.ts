@@ -27,6 +27,7 @@ declare namespace App {
             id: number;
             email: string;
             name: string | null;
+            isAdmin: boolean;
         };
     }
 }
