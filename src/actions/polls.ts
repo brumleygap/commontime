@@ -1,8 +1,8 @@
 import { defineAction, ActionError } from "astro:actions";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
-import { CreatePollSchema } from "./schemas/polls";
-import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail, sendReminderEmail } from "../lib/email";
+import { CreatePollSchema, EditPollSchema } from "./schemas/polls";
+import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancellationEmail, sendRescheduleEmail, sendReminderEmail, sendPollEditedEmail } from "../lib/email";
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
 
@@ -834,5 +834,107 @@ export const deletePoll = defineAction({
         ]);
 
         return { ok: true };
+    },
+});
+
+export const editPoll = defineAction({
+    accept: "form",
+    input: EditPollSchema,
+
+    handler: async (input, context) => {
+        const userId = context.locals.user?.id;
+        if (!userId) throw new ActionError({ code: "UNAUTHORIZED", message: "Login required." });
+
+        const db = env.DB;
+
+        const poll = await db
+            .prepare(`SELECT id, title, description, chosen_option_id FROM polls WHERE token = ? AND creator_id = ?`)
+            .bind(input.token, userId)
+            .first<{ id: number; title: string; description: string | null; chosen_option_id: number | null }>();
+
+        if (!poll) throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
+
+        await db
+            .prepare(`UPDATE polls SET title = ?, description = ?, duration_minutes = ? WHERE id = ?`)
+            .bind(input.title, input.description ?? null, input.duration, poll.id)
+            .run();
+
+        const isLocked = poll.chosen_option_id !== null;
+        if (isLocked || !input.options) {
+            return { ok: true, token: input.token };
+        }
+
+        const currentOptions: { id: number; option_datetime: string }[] = (
+            await db
+                .prepare(`SELECT id, option_datetime FROM poll_options WHERE poll_id = ?`)
+                .bind(poll.id)
+                .all<{ id: number; option_datetime: string }>()
+        ).results;
+
+        const currentById = new Map<number, string>(currentOptions.map(o => [o.id, o.option_datetime] as [number, string]));
+
+        const removedIds: number[] = [];
+        const insertDatetimes: string[] = [];
+
+        for (const submitted of input.options) {
+            if (submitted.id != null) {
+                const currentDatetime = currentById.get(submitted.id);
+                if (currentDatetime === undefined) continue;
+                if (currentDatetime !== submitted.datetime) {
+                    removedIds.push(submitted.id);
+                    insertDatetimes.push(submitted.datetime);
+                }
+                currentById.delete(submitted.id);
+            } else {
+                insertDatetimes.push(submitted.datetime);
+            }
+        }
+        for (const [id] of currentById) {
+            removedIds.push(id);
+        }
+
+        const optionsChanged = removedIds.length > 0 || insertDatetimes.length > 0;
+
+        if (optionsChanged) {
+            const batchOps = [];
+            if (removedIds.length > 0) {
+                const placeholders = removedIds.map(() => "?").join(", ");
+                batchOps.push(
+                    db.prepare(`DELETE FROM votes WHERE option_id IN (${placeholders})`).bind(...removedIds),
+                    db.prepare(`DELETE FROM poll_options WHERE id IN (${placeholders})`).bind(...removedIds),
+                );
+            }
+            for (const dt of insertDatetimes) {
+                batchOps.push(
+                    db.prepare(`INSERT INTO poll_options (poll_id, option_datetime) VALUES (?, ?)`).bind(poll.id, dt)
+                );
+            }
+            await db.batch(batchOps);
+
+            const recipients: { email: string }[] = (
+                await db
+                    .prepare(`
+                        SELECT COALESCE(u.email, pa.email) AS email
+                        FROM participants pa
+                        LEFT JOIN users u ON u.id = pa.user_id
+                        WHERE pa.poll_id = ?
+                          AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+                    `)
+                    .bind(poll.id)
+                    .all<{ email: string }>()
+            ).results;
+
+            const origin = new URL(context.request.url).origin;
+            const pollUrl = `${origin}/poll/${input.token}`;
+            const organizerEmail = context.locals.user?.email ?? "hello@commontime.app";
+
+            await Promise.allSettled(
+                recipients.map(r =>
+                    sendPollEditedEmail(env.EMAIL, r.email, input.title, input.description ?? null, pollUrl, organizerEmail)
+                )
+            );
+        }
+
+        return { ok: true, token: input.token };
     },
 });
