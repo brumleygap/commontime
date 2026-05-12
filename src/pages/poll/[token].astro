@@ -758,12 +758,18 @@ function cellColor(av: number | undefined): string {
     <!-- Fixed bottom bar -->
     <div class="org-bar">
       <button class="org-bar-btn" data-drawer="invite">Invite</button>
-      <button class="org-bar-btn" data-drawer="remind">
-        Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
-      </button>
-      <a href={`/poll/${token}/manage`} class="org-bar-btn">Links</a>
-      <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">Confirm</button>
-      <button class="org-bar-btn org-bar-btn--danger" data-drawer="cancel">Cancel</button>
+      <div class="org-bar-more-wrap">
+        <button class="org-bar-btn" id="org-bar-more" aria-haspopup="true" aria-expanded="false">···</button>
+        <div class="org-more-menu" id="org-more-menu" hidden>
+          <button class="org-more-item" data-drawer="remind">
+            Remind{nonResponderCount > 0 ? ` (${nonResponderCount})` : ""}
+          </button>
+          <a href={`/poll/${token}/manage`} class="org-more-item">Links</a>
+          <div class="org-more-divider"></div>
+          <button class="org-more-item org-more-item--danger" data-drawer="cancel">Cancel poll</button>
+        </div>
+      </div>
+      <button class="org-bar-btn org-bar-btn--primary" data-drawer="confirm">★ Confirm</button>
     </div>
   </>
 )}
@@ -2123,10 +2129,62 @@ function cellColor(av: number | undefined): string {
 
   .org-bar-btn:last-child { border-right: none; }
   .org-bar-btn:hover { background: rgba(245,242,236,0.08); }
-  a.org-bar-btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
 
   .org-bar-btn--primary { color: var(--cream); font-weight: 700; }
   .org-bar-btn--danger  { color: var(--on-dark); }
+
+  /* ── More menu ──────────────────────────────────────────────────────────── */
+  .org-bar-more-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    border-right: 1px solid rgba(245,242,236,0.12);
+  }
+  .org-bar-more-wrap > .org-bar-btn {
+    flex: 1;
+    border-right: none;
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .org-more-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    min-width: 190px;
+    background: var(--ink);
+    border: 1px solid rgba(245,242,236,0.2);
+    border-radius: 6px;
+    z-index: 91;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+
+  .org-more-item {
+    display: block;
+    width: 100%;
+    padding: 13px 18px;
+    background: none;
+    border: none;
+    color: rgba(245,242,236,0.9);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .org-more-item:hover { background: rgba(245,242,236,0.08); }
+  .org-more-item--danger { color: #ff8080; }
+
+  .org-more-divider {
+    height: 1px;
+    background: rgba(245,242,236,0.15);
+    margin: 2px 0;
+  }
 
   /* Desktop: constrain the bar to the content width so it doesn't
      span the full 1150px — feels more like a contained toolbar */
@@ -2275,6 +2333,34 @@ function cellColor(av: number | undefined): string {
     btn.addEventListener("click", closeAllDrawers);
   });
   overlay?.addEventListener("click", closeAllDrawers);
+
+  // ── More popup menu ──────────────────────────────────────────────────────
+  const moreBtn = document.getElementById("org-bar-more") as HTMLButtonElement | null;
+  const moreMenu = document.getElementById("org-more-menu") as HTMLElement | null;
+
+  function closeMoreMenu() {
+    if (!moreMenu || !moreBtn) return;
+    moreMenu.hidden = true;
+    moreBtn.setAttribute("aria-expanded", "false");
+  }
+
+  if (moreBtn && moreMenu) {
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const opening = moreMenu.hidden;
+      moreMenu.hidden = !opening;
+      moreBtn.setAttribute("aria-expanded", String(opening));
+    });
+
+    moreMenu.querySelectorAll<HTMLElement>("[data-drawer]").forEach(item => {
+      item.addEventListener("click", () => {
+        closeMoreMenu();
+        openDrawer(item.dataset.drawer!);
+      });
+    });
+
+    document.addEventListener("click", closeMoreMenu);
+  }
 
 
   // ── Mobile time detail popup ────────────────────────────────────────────

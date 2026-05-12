@@ -34,7 +34,6 @@ const participants = (
         p.edit_token,
         p.user_id,
         COALESCE(p.email, u.email) AS email,
-        i.id AS invite_id,
         i.token AS invite_token,
         i.expires_at AS invite_expires_at,
         i.used_at AS invite_used_at,
@@ -53,7 +52,6 @@ const participants = (
       edit_token: string;
       user_id: number | null;
       email: string | null;
-      invite_id: number | null;
       invite_token: string | null;
       invite_expires_at: string | null;
       invite_used_at: string | null;
@@ -113,7 +111,7 @@ function fmtExpiry(iso: string): string {
               </div>
               {p.email && <div class="p-email">{p.email}</div>}
               <div class="p-link-row">
-                <code class="p-link" data-url={link.url}>{link.url}</code>
+                <code class={`p-link${link.expired ? " expired" : ""}`}>{link.url}</code>
               </div>
               <div class="p-actions">
                 {link.expires && (
@@ -125,8 +123,9 @@ function fmtExpiry(iso: string): string {
                   class="p-btn copy-btn"
                   data-url={link.url}
                   type="button"
+                  disabled={link.expired}
                 >
-                  Copy link
+                  {link.expired ? "Link expired" : "Copy link"}
                 </button>
                 {link.canRenew && (
                   <button
@@ -139,6 +138,7 @@ function fmtExpiry(iso: string): string {
                   </button>
                 )}
               </div>
+              <div class="p-error" hidden></div>
             </div>
           );
         })}
@@ -249,7 +249,10 @@ function fmtExpiry(iso: string): string {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    word-break: break-all;
+  }
+  .p-link.expired {
+    color: var(--muted);
+    text-decoration: line-through;
   }
 
   .p-actions {
@@ -279,11 +282,18 @@ function fmtExpiry(iso: string): string {
     cursor: pointer;
     transition: background 0.15s;
   }
-  .p-btn:hover { background: var(--cream); }
+  .p-btn:hover:not(:disabled) { background: var(--cream); }
   .p-btn:disabled { opacity: 0.5; cursor: default; }
 
   .renew-btn {
     border-color: var(--ink);
+  }
+
+  .p-error {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--red);
+    margin-top: 8px;
   }
 </style>
 
@@ -294,10 +304,15 @@ function fmtExpiry(iso: string): string {
   document.querySelectorAll<HTMLButtonElement>(".copy-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const url = btn.dataset.url!;
-      await navigator.clipboard.writeText(url);
-      const orig = btn.textContent;
-      btn.textContent = "Copied!";
-      setTimeout(() => { btn.textContent = orig; }, 1500);
+      try {
+        await navigator.clipboard.writeText(url);
+        const orig = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      } catch {
+        btn.textContent = "Copy failed";
+        setTimeout(() => { btn.textContent = "Copy link"; }, 2000);
+      }
     });
   });
 
@@ -315,20 +330,25 @@ function fmtExpiry(iso: string): string {
 
       if (error) {
         btn.disabled = false;
-        btn.textContent = "Renew";
-        alert(error.message ?? "Failed to renew.");
+        btn.textContent = btn.classList.contains("renew-btn") ? "Renew +7d" : "Renew";
+        const errEl = btn.closest<HTMLElement>(".p-card")!.querySelector<HTMLElement>(".p-error")!;
+        errEl.textContent = error.message ?? "Failed to renew.";
+        errEl.hidden = false;
+        setTimeout(() => { errEl.hidden = true; }, 4000);
         return;
       }
 
-      // Update the card's link and expiry in place
+      // Update the card's link, expiry, and copy button in place
       const card = btn.closest<HTMLElement>(".p-card")!;
       const linkEl = card.querySelector<HTMLElement>(".p-link")!;
       const copyBtn = card.querySelector<HTMLButtonElement>(".copy-btn")!;
       const expiryEl = card.querySelector<HTMLElement>("[data-expiry]");
 
       linkEl.textContent = data!.inviteUrl;
-      linkEl.dataset.url = data!.inviteUrl;
+      linkEl.classList.remove("expired");
       copyBtn.dataset.url = data!.inviteUrl;
+      copyBtn.textContent = "Copy link";
+      copyBtn.disabled = false;
 
       if (expiryEl) {
         const exp = new Date(data!.expiresAt);
