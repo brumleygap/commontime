@@ -14,7 +14,7 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 
 ### Medium priority
 
-- [ ] **#4 4× duplicated recipient query** (`src/actions/polls.ts:187, 346, 407, 466`) — Identical 10-line `SELECT COALESCE(u.email, pa.email)` pasted into `lockPoll`, `cancelPoll`, `uncancelPoll`, `unlockPoll`. Extract to a shared helper.
+- [x] **#4 4× duplicated recipient query** (`src/actions/polls.ts:187, 346, 407, 466`) — Identical 10-line `SELECT COALESCE(u.email, pa.email)` pasted into `lockPoll`, `cancelPoll`, `uncancelPoll`, `unlockPoll`. Extract to a shared helper. ✅ Fixed 2026-05-12
 - [x] **#5 Dead API route** (`src/pages/api/polls/create.ts`) — Prototype scaffold that echoes input and writes nothing to the database. Misleads anyone trying to understand poll creation. ✅ Fixed 2026-05-09
 - [ ] **#6 Admin email hardcoded in source** (`src/actions/admin.ts:6`) — `ADMIN_EMAIL = "ernie.braganza@gmail.com"` in source. Should be `env.ADMIN_EMAIL` so it can change without a code deploy.
 

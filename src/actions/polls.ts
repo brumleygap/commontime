@@ -6,6 +6,21 @@ import { sendPollInviteEmail, sendFinalizationEmail, sendReopenEmail, sendCancel
 import { sendPushToUsers } from "../lib/webpush";
 import { makeToken } from "../lib/tokens";
 
+async function getPollRecipients(db: typeof env.DB, pollId: number): Promise<{ email: string; user_id: number | null }[]> {
+    return (
+        await db
+            .prepare(`
+                SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
+                FROM participants pa
+                LEFT JOIN users u ON u.id = pa.user_id
+                WHERE pa.poll_id = ?
+                  AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
+            `)
+            .bind(pollId)
+            .all<{ email: string; user_id: number | null }>()
+    ).results;
+}
+
 export const createPoll = defineAction({
     accept: "form",
     input: CreatePollSchema,
@@ -92,18 +107,7 @@ export const createPoll = defineAction({
                     const newPollUrl = `${origin}/poll/${token}`;
                     const organizerEmail = context.locals.user?.email ?? "hello@commontime.app";
 
-                    const recipients: { email: string; user_id: number | null }[] = (
-                        await db
-                            .prepare(`
-                                SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
-                                FROM participants pa
-                                LEFT JOIN users u ON u.id = pa.user_id
-                                WHERE pa.poll_id = ?
-                                  AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                            `)
-                            .bind(oldPoll.id)
-                            .all<{ email: string; user_id: number | null }>()
-                    ).results;
+                    const recipients = await getPollRecipients(db, oldPoll.id);
 
                     await Promise.allSettled(
                         recipients.map(r =>
@@ -184,18 +188,7 @@ export const lockPoll = defineAction({
         const pollUrl = `${origin}/poll/${input.token}`;
         const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
 
-        const recipients: { email: string; user_id: number | null }[] = (
-            await db
-                .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
-                    FROM participants pa
-                    LEFT JOIN users u ON u.id = pa.user_id
-                    WHERE pa.poll_id = ?
-                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                `)
-                .bind(poll.id)
-                .all<{ email: string; user_id: number | null }>()
-        ).results;
+        const recipients = await getPollRecipients(db, poll.id);
 
         const chosenDatetimes = options.map(o => o.option_datetime);
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
@@ -482,18 +475,7 @@ export const cancelPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string; user_id: number | null }[] = (
-            await db
-                .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
-                    FROM participants pa
-                    LEFT JOIN users u ON u.id = pa.user_id
-                    WHERE pa.poll_id = ?
-                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                `)
-                .bind(poll.id)
-                .all<{ email: string; user_id: number | null }>()
-        ).results;
+        const recipients = await getPollRecipients(db, poll.id);
 
         console.log(`cancelPoll: sending cancellation emails to ${recipients.length} recipient(s)`);
         const sendResults = await Promise.allSettled(
@@ -543,18 +525,7 @@ export const uncancelPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string; user_id: number | null }[] = (
-            await db
-                .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
-                    FROM participants pa
-                    LEFT JOIN users u ON u.id = pa.user_id
-                    WHERE pa.poll_id = ?
-                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                `)
-                .bind(poll.id)
-                .all<{ email: string; user_id: number | null }>()
-        ).results;
+        const recipients = await getPollRecipients(db, poll.id);
 
         console.log(`uncancelPoll: sending reopen emails to ${recipients.length} recipient(s)`);
         const reopenResults = await Promise.allSettled(
@@ -602,18 +573,7 @@ export const unlockPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
 
-        const recipients: { email: string; user_id: number | null }[] = (
-            await db
-                .prepare(`
-                    SELECT COALESCE(u.email, pa.email) AS email, pa.user_id
-                    FROM participants pa
-                    LEFT JOIN users u ON u.id = pa.user_id
-                    WHERE pa.poll_id = ?
-                      AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                `)
-                .bind(poll.id)
-                .all<{ email: string; user_id: number | null }>()
-        ).results;
+        const recipients = await getPollRecipients(db, poll.id);
 
         console.log(`unlockPoll: sending reopen emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const reopenResults = await Promise.allSettled(
@@ -911,18 +871,7 @@ export const editPoll = defineAction({
             }
             await db.batch(batchOps);
 
-            const recipients: { email: string }[] = (
-                await db
-                    .prepare(`
-                        SELECT COALESCE(u.email, pa.email) AS email
-                        FROM participants pa
-                        LEFT JOIN users u ON u.id = pa.user_id
-                        WHERE pa.poll_id = ?
-                          AND (pa.user_id IS NOT NULL OR pa.email IS NOT NULL)
-                    `)
-                    .bind(poll.id)
-                    .all<{ email: string }>()
-            ).results;
+            const recipients = await getPollRecipients(db, poll.id);
 
             const origin = new URL(context.request.url).origin;
             const pollUrl = `${origin}/poll/${input.token}`;
