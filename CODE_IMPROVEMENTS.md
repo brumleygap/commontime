@@ -26,7 +26,7 @@ Findings from periodic code reviews. Each item includes the file/line reference 
 ### Low priority
 
 - [ ] **#9 `toBase64url` spread risk** (`src/lib/webpush.ts:15`) — `String.fromCharCode(...buf)` spreads all bytes as function args; hits V8 arg-count limit on large buffers. Use a loop instead.
-- [ ] **#10 Dead code `onesignal.ts`** (`src/lib/onesignal.ts`) — Deprecated, not imported. Delete it.
+- [x] **#10 Dead code `onesignal.ts`** (`src/lib/onesignal.ts`) — Deprecated, not imported. Delete it. ✅ Fixed 2026-05-12
 - [ ] **#11 `VAPID_SUBJECT` unvalidated** (`src/lib/webpush.ts:129`) — Must be a `mailto:` or `https://` URI per spec; misconfiguration causes silent push failures.
 
 ### Awareness (no action required now)
