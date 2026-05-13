@@ -129,9 +129,11 @@ export async function sendFinalizationEmail(
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
 
+    const appleBtn = `${calBtn(openUrl, "Apple Calendar →")}<p style="margin:4px 0 0;font-size:11px;color:#888;font-family:Arial,Helvetica,sans-serif;">Downloads a file — open it to import</p>`;
+
     const calButtons = isMulti
-        ? `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 6px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${calBtn(openUrl, "Apple Calendar →")}<div style="height:16px;"></div>`).join("")}`
-        : `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${calBtn(openUrl, "Apple Calendar →")}`;
+        ? `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#333;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${appleBtn}<div style="height:16px;"></div>`).join("")}`
+        : `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${appleBtn}`;
 
     const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news — It's happening!</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
