@@ -393,11 +393,11 @@ function cellColor(av: number | undefined): string {
                 <>
                   <a href={gcalUrl(chosenOptions[0], poll)} target="_blank" rel="noopener" class="cal-picker-item">Google Calendar</a>
                   <a href={outlookUrl(chosenOptions[0], poll)} target="_blank" rel="noopener" class="cal-picker-item">Outlook</a>
-                  <a href={`/poll/${poll.token}/calendar-open`} class="cal-picker-item">Open in calendar app</a>
+                  <a href={`/poll/${poll.token}/calendar-open`} class="cal-picker-item">Apple Calendar</a>
                 </>
               ) : (
                 <>
-                  <a href={`/poll/${poll.token}/calendar-open`} class="cal-picker-item">Open in calendar app (all {chosenOptions.length} events)</a>
+                  <a href={`/poll/${poll.token}/calendar-open`} class="cal-picker-item">Apple Calendar (all {chosenOptions.length} events)</a>
                   <div class="cal-picker-divider">Add individually:</div>
                   {chosenOptions.map((opt) => (
                     <>
