@@ -163,9 +163,9 @@ export const lockPoll = defineAction({
         const db = env.DB;
 
         const poll = await db
-            .prepare(`SELECT id, title, description, timezone FROM polls WHERE token = ? AND creator_id = ?`)
+            .prepare(`SELECT id, title, description, timezone, duration_minutes FROM polls WHERE token = ? AND creator_id = ?`)
             .bind(input.token, userId)
-            .first<{ id: number; title: string; description: string | null; timezone: string }>();
+            .first<{ id: number; title: string; description: string | null; timezone: string; duration_minutes: number }>();
 
         if (!poll) {
             throw new ActionError({ code: "FORBIDDEN", message: "Poll not found or you are not the creator." });
@@ -194,6 +194,7 @@ export const lockPoll = defineAction({
         const origin = new URL(context.request.url).origin;
         const pollUrl = `${origin}/poll/${input.token}`;
         const calendarUrl = `${origin}/poll/${input.token}/calendar.ics`;
+        const calendarOpenUrl = `${origin}/poll/${input.token}/calendar-open`;
 
         const recipients = await getPollRecipients(db, poll.id);
 
@@ -201,7 +202,7 @@ export const lockPoll = defineAction({
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const sendResults = await Promise.allSettled(
             recipients.map((r) =>
-                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, chosenDatetimes, pollUrl, calendarUrl)
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, chosenDatetimes, pollUrl, calendarOpenUrl, poll.timezone, poll.duration_minutes ?? 60)
             )
         );
         sendResults.forEach((r, i) => {

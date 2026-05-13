@@ -1,3 +1,5 @@
+import { gcalUrl, outlookUrl } from "./calendar";
+
 function he(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -47,6 +49,17 @@ function wrap(body: string): string {
 </html>`;
 }
 
+// Full-width calendar option button — border style, large tap target (~44px)
+function calBtn(url: string, label: string): string {
+    return `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;width:100%;max-width:340px;">
+  <tr>
+    <td style="border:1px solid #c4bfb6;background:#ede9e1;padding:14px 20px;">
+      <a href="${url}" style="color:#0f0f0e;font-weight:bold;text-decoration:none;font-size:14px;font-family:Arial,Helvetica,sans-serif;display:block;">${label}</a>
+    </td>
+  </tr>
+</table>`;
+}
+
 // Table-based CTA button — background color renders in Outlook unlike CSS buttons
 function btn(url: string, label: string): string {
     return `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
@@ -65,7 +78,9 @@ export async function sendFinalizationEmail(
     pollDescription: string | null,
     chosenDatetimes: string[],
     pollUrl: string,
-    calendarUrl: string,
+    calendarOpenUrl: string,
+    timezone: string,
+    durationMinutes: number,
 ) {
     const fmt = (dt: string) => {
         const d = new Date(dt);
@@ -84,20 +99,27 @@ export async function sendFinalizationEmail(
 
     const subject = isMulti ? `Dates confirmed: ${pollTitle}` : `It's happening: ${pollTitle}`;
 
+    const gcalUrls = chosenDatetimes.map(dt => gcalUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
+    const outlookUrls = chosenDatetimes.map(dt => outlookUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
+
     const textBody = isMulti
-        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd all to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}`
-        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n${calendarUrl}\n\nView the poll:\n${pollUrl}`;
+        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd to your calendar:\n\nGoogle Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nOutlook:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${outlookUrls[i]}`).join("\n")}\n\nApple Calendar (all events):\n${calendarOpenUrl}\n\nView the poll:\n${pollUrl}`
+        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n  Google Calendar: ${gcalUrls[0]}\n  Outlook: ${outlookUrls[0]}\n  Apple Calendar: ${calendarOpenUrl}\n\nView the poll:\n${pollUrl}`;
 
     const datesHtml = isMulti
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
 
-    const calLabel = isMulti ? "Add all to calendar →" : "Add to calendar →";
+    const appleBtn = `${calBtn(calendarOpenUrl, "Apple Calendar →")}<p style="margin:4px 0 0;font-size:11px;color:#888;font-family:Arial,Helvetica,sans-serif;">Downloads a file — open it to import</p>`;
+
+    const calButtons = isMulti
+        ? `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#333;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${appleBtn}<div style="height:16px;"></div>`).join("")}`
+        : `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${appleBtn}`;
 
     const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news — It's happening!</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
 ${descHtml}<p style="margin:0 0 16px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">${isMulti ? "Here are the dates and times:" : "Here's the date and time:"}</p>
-${datesHtml}${btn(calendarUrl, calLabel)}
+${datesHtml}${calButtons}
 <p style="margin:16px 0 0;"><a href="${pollUrl}" style="color:#999;font-size:13px;font-family:Arial,Helvetica,sans-serif;text-decoration:none;">View poll →</a></p>`;
 
     const response = await emailBinding.fetch("https://commontime-email-sender/", {

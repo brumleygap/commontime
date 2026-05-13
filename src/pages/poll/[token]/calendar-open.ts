@@ -10,10 +10,11 @@ export const GET: APIRoute = async ({ params }) => {
         return new Response("Not found", { status: 404 });
     }
 
+    // No Content-Disposition header — browser/OS opens the file directly in the
+    // default calendar app rather than saving it to Downloads.
     return new Response(buildIcsBody(rows, token!), {
         headers: {
             "Content-Type": "text/calendar; charset=utf-8",
-            "Content-Disposition": 'attachment; filename="event.ics"',
         },
     });
 };
