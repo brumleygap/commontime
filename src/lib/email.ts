@@ -119,6 +119,7 @@ export async function sendFinalizationEmail(
 
     const gcalUrls = chosenDatetimes.map(dt => gcalUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
     const outlookUrls = chosenDatetimes.map(dt => outlookUrl(dt, pollTitle, pollDescription, durationMinutes));
+    const openUrl = calendarUrl.replace("/calendar.ics", "/calendar-open");
 
     const textBody = isMulti
         ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd to your calendar:\n\nGoogle Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nOutlook:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${outlookUrls[i]}`).join("\n")}\n\nApple / ICS (all events):\n${calendarUrl}\n\nView the poll:\n${pollUrl}`
@@ -127,8 +128,6 @@ export async function sendFinalizationEmail(
     const datesHtml = isMulti
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
-
-    const openUrl = calendarUrl.replace("/calendar.ics", "/calendar-open");
 
     const calButtons = isMulti
         ? `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 6px;font-size:14px;color:#555;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${calBtn(openUrl, "Apple Calendar →")}<div style="height:16px;"></div>`).join("")}`
