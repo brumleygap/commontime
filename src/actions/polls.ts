@@ -202,7 +202,7 @@ export const lockPoll = defineAction({
         console.log(`lockPoll: sending finalization emails to ${recipients.length} recipient(s):`, recipients.map(r => r.email));
         const sendResults = await Promise.allSettled(
             recipients.map((r) =>
-                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, chosenDatetimes, pollUrl, calendarUrl, calendarOpenUrl, poll.timezone, poll.duration_minutes ?? 60)
+                sendFinalizationEmail(env.EMAIL, r.email, poll.title, poll.description, chosenDatetimes, pollUrl, calendarOpenUrl, poll.timezone, poll.duration_minutes ?? 60)
             )
         );
         sendResults.forEach((r, i) => {

@@ -1,4 +1,4 @@
-export function toCalLocal(dt: string): string {
+function toCalLocal(dt: string): string {
     return dt.replace(/[-:]/g, "").replace(/\.\d+/, "").slice(0, 15).padEnd(15, "0");
 }
 
@@ -28,6 +28,10 @@ export function outlookUrl(dt: string, title: string, description: string | null
     const offset = gmtOffsetToIso(tzParts.find(p => p.type === "timeZoneName")?.value ?? "GMT");
 
     const cleanStart = dt.replace(/\.\d+$/, "").slice(0, 19);
+    // cleanEnd is computed by treating dt as UTC and adding duration — valid because
+    // both start and end shift by the same amount, preserving the local clock difference.
+    // Known limitation: if the duration spans a DST transition, the end offset will be
+    // off by 1 hour. Acceptable given how rarely meetings straddle a 2 AM clock change.
     const cleanEnd = new Date(approxDate.getTime() + durationMinutes * 60000).toISOString().slice(0, 19);
 
     const params = new URLSearchParams({
@@ -41,12 +45,28 @@ export function outlookUrl(dt: string, title: string, description: string | null
     return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
 }
 
-type IcsRow = { title: string; description: string | null; timezone: string; duration_minutes: number; option_datetime: string; id: number };
+export type IcsRow = { title: string; description: string | null; timezone: string; duration_minutes: number; option_datetime: string; id: number };
+
+interface D1Queryable {
+    prepare(sql: string): { bind(...args: unknown[]): { all<T>(): Promise<{ results: T[] }> } };
+}
+
+export async function fetchIcsRows(db: D1Queryable, token: string): Promise<IcsRow[]> {
+    return (await db
+        .prepare(`
+            SELECT p.title, p.description, p.timezone, p.duration_minutes, po.option_datetime, po.id
+            FROM polls p
+            JOIN chosen_poll_options cpo ON cpo.poll_id = p.id
+            JOIN poll_options po ON po.id = cpo.option_id
+            WHERE p.token = ? AND p.chosen_option_id IS NOT NULL
+            ORDER BY po.option_datetime ASC
+        `)
+        .bind(token)
+        .all<IcsRow>()
+    ).results;
+}
 
 export function buildIcsBody(rows: IcsRow[], token: string): string {
-    const toIcsLocal = (s: string) =>
-        s.replace(/[-:]/g, "").replace(/\.\d+/, "").slice(0, 15).padEnd(15, "0");
-
     const dtstamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
 
     const esc = (s: string) =>
@@ -70,8 +90,8 @@ export function buildIcsBody(rows: IcsRow[], token: string): string {
             "BEGIN:VEVENT",
             `UID:${token}-${row.id}@commontime.app`,
             `DTSTAMP:${dtstamp}`,
-            `DTSTART;TZID=${timezone}:${toIcsLocal(row.option_datetime)}`,
-            `DTEND;TZID=${timezone}:${toIcsLocal(endIso)}`,
+            `DTSTART;TZID=${timezone}:${toCalLocal(row.option_datetime)}`,
+            `DTEND;TZID=${timezone}:${toCalLocal(endIso)}`,
             `SUMMARY:${esc(title)}`,
             ...(description ? [`DESCRIPTION:${esc(description)}`] : []),
             "END:VEVENT",

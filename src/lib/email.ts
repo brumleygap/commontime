@@ -78,7 +78,6 @@ export async function sendFinalizationEmail(
     pollDescription: string | null,
     chosenDatetimes: string[],
     pollUrl: string,
-    calendarUrl: string,
     calendarOpenUrl: string,
     timezone: string,
     durationMinutes: number,
