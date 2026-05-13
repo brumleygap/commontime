@@ -45,6 +45,14 @@ export function outlookUrl(dt: string, title: string, description: string | null
     return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
 }
 
+export function yahooUrl(dt: string, title: string, description: string | null, _timezone: string, durationMinutes: number): string {
+    const startUtc = toCalLocal(dt) + "Z";
+    const endUtc = toCalLocal(new Date(new Date(dt).getTime() + durationMinutes * 60_000).toISOString()) + "Z";
+    const params = new URLSearchParams({ v: "60", title, st: startUtc, et: endUtc });
+    if (description) params.set("desc", description);
+    return `https://calendar.yahoo.com/?${params}`;
+}
+
 export type IcsRow = { title: string; description: string | null; timezone: string; duration_minutes: number; option_datetime: string; id: number };
 
 interface D1Queryable {
