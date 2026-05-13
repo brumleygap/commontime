@@ -59,6 +59,25 @@ function gcalUrl(dt: string, title: string, description: string | null, timezone
     return `https://calendar.google.com/calendar/render?${params}`;
 }
 
+function outlookUrl(dt: string, title: string, description: string | null, durationMinutes: number): string {
+    const start = dt.replace(/\.\d+$/, "");
+    const end = new Date(new Date(dt).getTime() + durationMinutes * 60000).toISOString().slice(0, 16);
+    const params = new URLSearchParams({ subject: title, startdt: start, enddt: end, path: "/calendar/action/compose", rru: "addevent" });
+    if (description) params.set("body", description);
+    return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
+}
+
+// Full-width calendar option button — border style, large tap target (~44px)
+function calBtn(url: string, label: string): string {
+    return `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;width:100%;max-width:340px;">
+  <tr>
+    <td style="border:1px solid #d4cfc6;background:#fafaf8;padding:14px 20px;">
+      <a href="${url}" style="color:#0f0f0e;font-weight:bold;text-decoration:none;font-size:14px;font-family:Arial,Helvetica,sans-serif;display:block;">${label}</a>
+    </td>
+  </tr>
+</table>`;
+}
+
 // Table-based CTA button — background color renders in Outlook unlike CSS buttons
 function btn(url: string, label: string): string {
     return `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
@@ -99,18 +118,19 @@ export async function sendFinalizationEmail(
     const subject = isMulti ? `Dates confirmed: ${pollTitle}` : `It's happening: ${pollTitle}`;
 
     const gcalUrls = chosenDatetimes.map(dt => gcalUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
+    const outlookUrls = chosenDatetimes.map(dt => outlookUrl(dt, pollTitle, pollDescription, durationMinutes));
 
     const textBody = isMulti
-        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nDownload .ics (all events):\n${calendarUrl}\n\nAdd to Google Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nView the poll:\n${pollUrl}`
-        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to Google Calendar:\n${gcalUrls[0]}\n\nOr download Apple / ICS:\n${calendarUrl}\n\nView the poll:\n${pollUrl}`;
+        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd to your calendar:\n\nGoogle Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nOutlook:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${outlookUrls[i]}`).join("\n")}\n\nApple / ICS (all events):\n${calendarUrl}\n\nView the poll:\n${pollUrl}`
+        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n  Google Calendar: ${gcalUrls[0]}\n  Outlook: ${outlookUrls[0]}\n  Apple / ICS: ${calendarUrl}\n\nView the poll:\n${pollUrl}`;
 
     const datesHtml = isMulti
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
 
     const calButtons = isMulti
-        ? `${btn(calendarUrl, "Download .ics (all events) →")}<p style="margin:16px 0 4px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to Google Calendar:</p>${chosenDatetimes.map((dt, i) => `<p style="margin:4px 0;font-size:13px;font-family:Arial,Helvetica,sans-serif;"><a href="${gcalUrls[i]}" style="color:#c8102e;text-decoration:underline;">${displayDatesHtml[i]} →</a></p>`).join("")}`
-        : `${btn(gcalUrls[0], "Add to Google Calendar →")}<p style="margin:10px 0 0;font-size:13px;font-family:Arial,Helvetica,sans-serif;"><a href="${calendarUrl}" style="color:#999;text-decoration:underline;">or Apple / ICS download →</a></p>`;
+        ? `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 2px;font-size:12px;color:#888;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${calBtn(calendarUrl, "Apple / ICS →")}<div style="height:12px;"></div>`).join("")}`
+        : `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${calBtn(calendarUrl, "Apple / ICS download →")}`;
 
     const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news — It's happening!</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
