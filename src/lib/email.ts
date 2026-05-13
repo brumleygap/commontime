@@ -128,9 +128,11 @@ export async function sendFinalizationEmail(
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
 
+    const openUrl = calendarUrl.replace("/calendar.ics", "/calendar-open");
+
     const calButtons = isMulti
-        ? `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 2px;font-size:12px;color:#888;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${calBtn(calendarUrl, "Apple / ICS →")}<div style="height:12px;"></div>`).join("")}`
-        : `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${calBtn(calendarUrl, "Apple / ICS download →")}`;
+        ? `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 2px;font-size:12px;color:#888;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${calBtn(openUrl, "Open in calendar app →")}<div style="height:12px;"></div>`).join("")}`
+        : `<p style="margin:0 0 8px;font-size:13px;color:#555;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${calBtn(gcalUrls[0], "Google Calendar →")}${calBtn(outlookUrls[0], "Outlook →")}${calBtn(openUrl, "Open in calendar app →")}`;
 
     const htmlBody = `<p style="margin:0 0 4px;font-family:Arial,Helvetica,sans-serif;">Great news — It's happening!</p>
 <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;margin:0 0 8px;color:#0f0f0e;">${he(pollTitle)}</h2>
