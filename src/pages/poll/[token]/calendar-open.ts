@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
+import { buildIcsBody } from "../../../lib/calendar";
 
 export const GET: APIRoute = async ({ params }) => {
     const { token } = params;
@@ -22,45 +23,9 @@ export const GET: APIRoute = async ({ params }) => {
         return new Response("Not found", { status: 404 });
     }
 
-    const toIcsLocal = (dt: string) =>
-        dt.replace(/[-:]/g, "").replace(/\.\d+/, "").slice(0, 15).padEnd(15, "0");
-
-    const dtstamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
-
-    const esc = (s: string) =>
-        s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
-
-    const { title, description, timezone, duration_minutes } = rows[0];
-    const durationMs = (duration_minutes ?? 60) * 60 * 1000;
-
-    const lines = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//CommonTime//EN",
-        "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
-    ];
-
-    for (const row of rows) {
-        const startMs = new Date(row.option_datetime).getTime();
-        const endIso = new Date(startMs + durationMs).toISOString().slice(0, 16);
-        lines.push(
-            "BEGIN:VEVENT",
-            `UID:${token}-${row.id}@commontime.app`,
-            `DTSTAMP:${dtstamp}`,
-            `DTSTART;TZID=${timezone}:${toIcsLocal(row.option_datetime)}`,
-            `DTEND;TZID=${timezone}:${toIcsLocal(endIso)}`,
-            `SUMMARY:${esc(title)}`,
-            ...(description ? [`DESCRIPTION:${esc(description)}`] : []),
-            "END:VEVENT",
-        );
-    }
-
-    lines.push("END:VCALENDAR");
-
     // No Content-Disposition header — browser/OS opens the file directly in the
     // default calendar app rather than saving it to Downloads.
-    return new Response(lines.join("\r\n"), {
+    return new Response(buildIcsBody(rows, token!), {
         headers: {
             "Content-Type": "text/calendar; charset=utf-8",
         },

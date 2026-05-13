@@ -1,3 +1,5 @@
+import { gcalUrl, outlookUrl } from "./calendar";
+
 function he(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -47,26 +49,6 @@ function wrap(body: string): string {
 </html>`;
 }
 
-function toCalLocal(dt: string): string {
-    return dt.replace(/[-:]/g, "").replace(/\.\d+/, "").slice(0, 15).padEnd(15, "0");
-}
-
-function gcalUrl(dt: string, title: string, description: string | null, timezone: string, durationMinutes: number): string {
-    const start = toCalLocal(dt);
-    const end = toCalLocal(new Date(new Date(dt).getTime() + durationMinutes * 60000).toISOString().slice(0, 16));
-    const params = new URLSearchParams({ action: "TEMPLATE", text: title, dates: `${start}/${end}`, ctz: timezone });
-    if (description) params.set("details", description);
-    return `https://calendar.google.com/calendar/render?${params}`;
-}
-
-function outlookUrl(dt: string, title: string, description: string | null, durationMinutes: number): string {
-    const start = dt.replace(/\.\d+$/, "");
-    const end = new Date(new Date(dt).getTime() + durationMinutes * 60000).toISOString().slice(0, 16);
-    const params = new URLSearchParams({ subject: title, startdt: start, enddt: end, path: "/calendar/action/compose", rru: "addevent" });
-    if (description) params.set("body", description);
-    return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
-}
-
 // Full-width calendar option button — border style, large tap target (~44px)
 function calBtn(url: string, label: string): string {
     return `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;width:100%;max-width:340px;">
@@ -97,6 +79,7 @@ export async function sendFinalizationEmail(
     chosenDatetimes: string[],
     pollUrl: string,
     calendarUrl: string,
+    calendarOpenUrl: string,
     timezone: string,
     durationMinutes: number,
 ) {
@@ -118,18 +101,17 @@ export async function sendFinalizationEmail(
     const subject = isMulti ? `Dates confirmed: ${pollTitle}` : `It's happening: ${pollTitle}`;
 
     const gcalUrls = chosenDatetimes.map(dt => gcalUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
-    const outlookUrls = chosenDatetimes.map(dt => outlookUrl(dt, pollTitle, pollDescription, durationMinutes));
-    const openUrl = calendarUrl.replace("/calendar.ics", "/calendar-open");
+    const outlookUrls = chosenDatetimes.map(dt => outlookUrl(dt, pollTitle, pollDescription, timezone, durationMinutes));
 
     const textBody = isMulti
-        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd to your calendar:\n\nGoogle Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nOutlook:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${outlookUrls[i]}`).join("\n")}\n\nApple / ICS (all events):\n${calendarUrl}\n\nView the poll:\n${pollUrl}`
-        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n  Google Calendar: ${gcalUrls[0]}\n  Outlook: ${outlookUrls[0]}\n  Apple Calendar: ${openUrl}\n\nView the poll:\n${pollUrl}`;
+        ? `Great news — ${chosenDatetimes.length} dates have been confirmed for "${pollTitle}".${descText}\n\n${displayDates.map(d => `  • ${d}`).join("\n")}\n\nAdd to your calendar:\n\nGoogle Calendar:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${gcalUrls[i]}`).join("\n")}\n\nOutlook:\n${chosenDatetimes.map((_, i) => `  • ${displayDates[i]}: ${outlookUrls[i]}`).join("\n")}\n\nApple Calendar (all events):\n${calendarOpenUrl}\n\nView the poll:\n${pollUrl}`
+        : `Great news — a date has been confirmed for "${pollTitle}".${descText}\n\n${displayDates[0]}\n\nAdd to your calendar:\n  Google Calendar: ${gcalUrls[0]}\n  Outlook: ${outlookUrls[0]}\n  Apple Calendar: ${calendarOpenUrl}\n\nView the poll:\n${pollUrl}`;
 
     const datesHtml = isMulti
         ? `<ul style="margin:0 0 24px;padding-left:20px;">${displayDatesHtml.map(d => `<li style="margin-bottom:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">${d}</li>`).join("")}</ul>`
         : `<p style="font-size:18px;font-weight:bold;margin:0 0 24px;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[0]}</p>`;
 
-    const appleBtn = `${calBtn(openUrl, "Apple Calendar →")}<p style="margin:4px 0 0;font-size:11px;color:#888;font-family:Arial,Helvetica,sans-serif;">Downloads a file — open it to import</p>`;
+    const appleBtn = `${calBtn(calendarOpenUrl, "Apple Calendar →")}<p style="margin:4px 0 0;font-size:11px;color:#888;font-family:Arial,Helvetica,sans-serif;">Downloads a file — open it to import</p>`;
 
     const calButtons = isMulti
         ? `<p style="margin:0 0 10px;font-size:15px;color:#333;font-family:Arial,Helvetica,sans-serif;">Add to your calendar:</p>${chosenDatetimes.map((_, i) => `<p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#333;font-family:Arial,Helvetica,sans-serif;">${displayDatesHtml[i]}</p>${calBtn(gcalUrls[i], "Google Calendar →")}${calBtn(outlookUrls[i], "Outlook →")}${appleBtn}<div style="height:16px;"></div>`).join("")}`

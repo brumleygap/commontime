@@ -3,6 +3,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { actions } from "astro:actions";
 import { env } from "cloudflare:workers";
 import { isPollLocked } from "../../lib/poll";
+import { gcalUrl as buildGcalUrl, outlookUrl as buildOutlookUrl } from "../../lib/calendar";
 
 const { token } = Astro.params;
 const db = env.DB;
@@ -299,27 +300,6 @@ function fmtFull(dt: string, durationMins: number) {
     + `${fmtT(start)} – ${fmtT(end)}`;
 }
 
-function toCalLocal(dt: string): string {
-  return dt.replace(/[-:]/g, "").replace(/\.\d+/, "").slice(0, 15).padEnd(15, "0");
-}
-
-function gcalUrl(opt: { option_datetime: string }, p: { title: string; description: string | null; duration_minutes: number; timezone: string }): string {
-  const start = toCalLocal(opt.option_datetime);
-  const endDt = new Date(new Date(opt.option_datetime).getTime() + (p.duration_minutes ?? 60) * 60000).toISOString().slice(0, 16);
-  const end = toCalLocal(endDt);
-  const params = new URLSearchParams({ action: "TEMPLATE", text: p.title, dates: `${start}/${end}`, ctz: p.timezone });
-  if (p.description) params.set("details", p.description);
-  return `https://calendar.google.com/calendar/render?${params}`;
-}
-
-function outlookUrl(opt: { option_datetime: string }, p: { title: string; description: string | null; duration_minutes: number }): string {
-  const start = opt.option_datetime.replace(/\.\d+$/, "");
-  const end = new Date(new Date(opt.option_datetime).getTime() + (p.duration_minutes ?? 60) * 60000).toISOString().slice(0, 16);
-  const params = new URLSearchParams({ subject: p.title, startdt: start, enddt: end, path: "/calendar/action/compose", rru: "addevent" });
-  if (p.description) params.set("body", p.description);
-  return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
-}
-
 // Cell background for a given availability value
 function cellBg(av: number | undefined): string {
   if (av === 1) return "background:var(--yes-bg)";
@@ -391,8 +371,8 @@ function cellColor(av: number | undefined): string {
             <div class="cal-picker-menu">
               {chosenOptions.length === 1 ? (
                 <>
-                  <a href={gcalUrl(chosenOptions[0], poll)} target="_blank" rel="noopener" class="cal-picker-item">Google Calendar</a>
-                  <a href={outlookUrl(chosenOptions[0], poll)} target="_blank" rel="noopener" class="cal-picker-item">Outlook</a>
+                  <a href={buildGcalUrl(chosenOptions[0].option_datetime, poll.title, poll.description, poll.timezone, poll.duration_minutes ?? 60)} target="_blank" rel="noopener" class="cal-picker-item">Google Calendar</a>
+                  <a href={buildOutlookUrl(chosenOptions[0].option_datetime, poll.title, poll.description, poll.timezone, poll.duration_minutes ?? 60)} target="_blank" rel="noopener" class="cal-picker-item">Outlook</a>
                   <a href={`/poll/${poll.token}/calendar-open`} class="cal-picker-item">Apple Calendar</a>
                 </>
               ) : (
@@ -401,8 +381,8 @@ function cellColor(av: number | undefined): string {
                   <div class="cal-picker-divider">Add individually:</div>
                   {chosenOptions.map((opt) => (
                     <>
-                      <a href={gcalUrl(opt, poll)} target="_blank" rel="noopener" class="cal-picker-item cal-picker-item--sub">Google · {fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</a>
-                      <a href={outlookUrl(opt, poll)} target="_blank" rel="noopener" class="cal-picker-item cal-picker-item--sub">Outlook · {fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</a>
+                      <a href={buildGcalUrl(opt.option_datetime, poll.title, poll.description, poll.timezone, poll.duration_minutes ?? 60)} target="_blank" rel="noopener" class="cal-picker-item cal-picker-item--sub">Google · {fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</a>
+                      <a href={buildOutlookUrl(opt.option_datetime, poll.title, poll.description, poll.timezone, poll.duration_minutes ?? 60)} target="_blank" rel="noopener" class="cal-picker-item cal-picker-item--sub">Outlook · {fmtFull(opt.option_datetime, poll.duration_minutes ?? 60)}</a>
                     </>
                   ))}
                 </>
