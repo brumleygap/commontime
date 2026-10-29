@@ -13,7 +13,7 @@
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "astro": "^6.4.7",
-    "vite": "^7.3.5"
+    "vite": "^7.3.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
