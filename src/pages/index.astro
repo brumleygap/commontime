@@ -139,8 +139,9 @@ if (user) {
 ---
 
 <BaseLayout title="CommonTime">
+  {/* Branches: logged-in poll dashboard / guest polls (participated) / logged-out marketing hero.
+      Comments can't lead a ternary branch: Astro 7's compiler rejects them. */}
   {user ? (
-    <!-- ── Logged-in: poll dashboard ───────────────────────────── -->
     <div class="mx-auto max-w-2xl px-6 py-10">
       <div class="dash-header">
         <div>
@@ -271,7 +272,6 @@ if (user) {
       )}
     </div>
   ) : guestPolls.length > 0 ? (
-    <!-- ── Guest: polls they've participated in ───────────────── -->
     <div class="mx-auto max-w-2xl px-6 py-10">
       <div class="dash-header">
         <div>
@@ -316,7 +316,6 @@ if (user) {
       </p>
     </div>
   ) : (
-    <!-- ── Logged-out new visitor: marketing hero ─────────────── -->
     <section class="relative overflow-hidden" style="min-height: calc(100vh - 120px);">
       <div class="staff-bg absolute inset-0" aria-hidden="true"></div>
       <div class="time-sig" aria-hidden="true">4<br />4</div>
